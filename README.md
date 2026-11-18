@@ -43,7 +43,7 @@ anything is copied.
 
 Every change to this folder is built automatically on GitHub:
 
-1. Open the repository on GitHub and go to **Actions → Build Outlook Archiver (Windows)**.
+1. Open https://github.com/sulaimanmokhaniq/outlook-archiver/actions and choose **Build Outlook Archiver (Windows)** on the left.
 2. Open the latest green run and download **OutlookArchiver-windows** at the bottom of the page.
 3. Unzip it and double-click `OutlookArchiver.exe`.
 
