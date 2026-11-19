@@ -238,3 +238,14 @@ def test_connect_failure_is_reported(tmp_path):
         time.sleep(0.02)
     st = ctl.state()
     assert not st["connected"] and "classic Outlook" in st["error"] and st["error_seq"] == 1
+
+
+def test_icons_are_served(client):
+    for path in ("/app.ico", "/favicon.ico", "/icon-32.png", "/icon-256.png"):
+        status, body = client.call("GET", path, token=False)
+        assert status == 200 and len(body) > 500, path
+
+
+def test_window_icon_is_harmless_off_windows():
+    from archiver.win_icon import WindowIcon
+    assert WindowIcon("archiver/web/app.ico").apply() == 0

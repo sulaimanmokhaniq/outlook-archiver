@@ -30,7 +30,7 @@ jobs:
         run: python -c "import archiver.outlook_backend, archiver.server; print('imports ok')"
 
       - name: Build the .exe
-        run: python -m PyInstaller --noconfirm --onefile --windowed --name OutlookArchiver --hidden-import win32timezone --add-data "archiver/web;archiver/web" OutlookArchiver.py
+        run: python -m PyInstaller --noconfirm --onefile --windowed --name OutlookArchiver --icon archiver/web/app.ico --hidden-import win32timezone --add-data "archiver/web;archiver/web" OutlookArchiver.py
 
       - name: Check the .exe starts and serves its screen
         shell: pwsh
@@ -41,6 +41,25 @@ jobs:
           Stop-Process -Id $p.Id -Force
           if ($r.StatusCode -ne 200 -or $r.Content -notmatch 'Outlook Archiver') { throw "the .exe did not serve its screen" }
           Write-Output "exe ok"
+
+      - name: Check the window shows the sharp icon
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          python -m pip install pillow==11.0.0
+          $p = Start-Process dist\OutlookArchiver.exe -ArgumentList '--demo' -PassThru
+          python tools/check_window_icon.py
+          $code = $LASTEXITCODE
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          Get-Process msedge -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          exit $code
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: window-check
+          path: outlook-archiver-window-check.png
+          if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v4
         with:

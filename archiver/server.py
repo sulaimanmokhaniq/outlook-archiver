@@ -26,6 +26,7 @@ from .base import Backend, BackendError, Cancelled
 from .core import Criteria, ExportOptions, preview_row, summarize
 from .i18n import LANGS, Translator
 from .storage import History, Settings, app_dir
+from .win_icon import WindowIcon
 
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 STATIC = {
@@ -33,7 +34,9 @@ STATIC = {
     "/index.html": ("index.html", "text/html; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/style.css": ("style.css", "text/css; charset=utf-8"),
-    "/icon.svg": ("icon.svg", "image/svg+xml"),
+    "/app.ico": ("app.ico", "image/x-icon"),
+    "/favicon.ico": ("app.ico", "image/x-icon"),
+    **{f"/icon-{s}.png": (f"icon-{s}.png", "image/png") for s in (32, 48, 64, 128, 192, 256, 512)},
 }
 PREVIEW_LIMIT = 500
 IDLE_LIMIT = 180  # seconds without the window asking for news before quitting
@@ -450,8 +453,11 @@ def run_app(make_backend: Callable[[], Backend], show_window: bool = True, port:
     print(f"Outlook Archiver {__version__} is running at {server.url}", flush=True)
     window = open_window(server.url) if show_window else None
     started = time.time()
+    icon = WindowIcon(os.path.join(WEB_DIR, "app.ico")) if show_window else None
     try:
         while not server.should_quit(window, started):
+            if icon:
+                icon.apply()  # sharp taskbar icon (Windows only)
             time.sleep(1)
     except KeyboardInterrupt:
         pass
