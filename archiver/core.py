@@ -5,31 +5,20 @@ Nothing in here talks to Outlook, so it can be tested on any computer.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import os
 import re
 from dataclasses import dataclass, field
 
+from .i18n import Translator
+
 # ---------------------------------------------------------------- item types
 
-ITEM_KINDS: dict[str, str] = {
-    "mail": "Emails (incl. drafts)",
-    "meeting": "Meeting invitations & replies",
-    "appointment": "Calendar (appointments & meetings)",
-    "contact": "Contacts",
-    "task": "Tasks",
-    "note": "Notes",
-    "other": "Other (reports, posts, ...)",
-}
+ITEM_KINDS = ("mail", "meeting", "appointment", "contact", "task", "note", "other")
 
-KIND_FOLDER_NAMES: dict[str, str] = {
-    "mail": "Emails",
-    "meeting": "Meeting invitations",
-    "appointment": "Calendar",
-    "contact": "Contacts",
-    "task": "Tasks",
-    "note": "Notes",
-    "other": "Other",
-}
+# Kinds that may be removed from the mailbox after archiving. Contacts and
+# tasks are "living" data; calendar items are checked one by one.
+REMOVABLE_KINDS = {"mail", "meeting", "note", "other", "appointment"}
 
 
 def classify(message_class: str | None) -> str:
@@ -52,13 +41,7 @@ def classify(message_class: str | None) -> str:
 
 # ------------------------------------------------------------------- dates
 
-DATE_FIELDS: dict[str, str] = {
-    "auto": "Best date for each item",
-    "received": "Received date",
-    "sent": "Sent date",
-    "created": "Created date",
-    "modified": "Last modified date",
-}
+DATE_FIELDS = ("auto", "received", "sent", "created", "modified")
 
 
 def clean_date(value) -> dt.datetime | None:
@@ -99,6 +82,8 @@ class ItemInfo:
     created: dt.datetime | None = None
     modified: dt.datetime | None = None
     start: dt.datetime | None = None
+    end: dt.datetime | None = None
+    recurring: bool = False
     attachments: int | None = None  # filled in only when the item is opened
 
     @property
@@ -131,13 +116,34 @@ class ItemInfo:
     def display_date(self) -> dt.datetime | None:
         return self.date_for("auto")
 
+    def fingerprint(self) -> str:
+        """Identifies the item across runs, even if Outlook gives it a new ID."""
+        d = self.display_date or self.created or self.modified
+        raw = "\x1f".join([
+            self.store_name.lower(), self.kind, self.subject.strip(), self.sender.strip().lower(),
+            d.isoformat() if d else "", self.created.isoformat() if self.created else "",
+        ])
+        return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+    def removal_blocker(self, now: dt.datetime | None = None) -> str | None:
+        """Why this item must stay in the mailbox, or None if it may go."""
+        if self.kind not in REMOVABLE_KINDS:
+            return "kind"
+        if self.kind == "appointment":
+            now = now or dt.datetime.now()
+            if self.recurring:
+                return "recurring"
+            if (self.end or self.start or now) >= now:
+                return "future"
+        return None
+
 
 # ----------------------------------------------------------------- filters
 
 
 def split_terms(text: str | None) -> list[str]:
     """'ahmed; sara , ' -> ['ahmed', 'sara']"""
-    return [t.strip().lower() for t in re.split(r"[;,\n]", text or "") if t.strip()]
+    return [t.strip().lower() for t in re.split(r"[;,،\n]", text or "") if t.strip()]
 
 
 def _contains_any(haystack: str, terms: list[str]) -> bool:
@@ -164,26 +170,22 @@ class Criteria:
         """True if some filters need the full item (slower)."""
         return bool(split_terms(self.body_words)) or self.attachments != "any"
 
-    def describe(self) -> str:
-        parts = []
-        if set(self.kinds) != set(ITEM_KINDS):
-            parts.append("types: " + ", ".join(ITEM_KINDS[k] for k in ITEM_KINDS if k in self.kinds))
-        if self.date_from or self.date_to:
-            a = self.date_from.isoformat() if self.date_from else "the beginning"
-            b = self.date_to.isoformat() if self.date_to else "today"
-            parts.append(f"{DATE_FIELDS[self.date_field].lower()} from {a} to {b}")
-        for label, value in (
-            ("from", self.sender),
-            ("to/cc", self.recipients),
-            ("subject", self.subject),
-            ("words", self.body_words),
-            ("category", self.category),
-        ):
-            if value.strip():
-                parts.append(f"{label} contains '{value.strip()}'")
-        if self.attachments != "any":
-            parts.append(f"{self.attachments} attachments")
-        return "; ".join(parts) if parts else "everything in the chosen folders"
+    @classmethod
+    def from_dict(cls, d: dict) -> "Criteria":
+        kinds = {k for k in d.get("kinds", ITEM_KINDS) if k in ITEM_KINDS}
+        field_ = d.get("date_field", "auto")
+        return cls(
+            kinds=kinds,
+            date_field=field_ if field_ in DATE_FIELDS else "auto",
+            date_from=parse_date(d.get("date_from", "")),
+            date_to=parse_date(d.get("date_to", "")),
+            sender=str(d.get("sender", "")),
+            recipients=str(d.get("recipients", "")),
+            subject=str(d.get("subject", "")),
+            body_words=str(d.get("body_words", "")),
+            category=str(d.get("category", "")),
+            attachments=d.get("attachments", "any") if d.get("attachments") in ("any", "with", "without") else "any",
+        )
 
 
 def matches_quick(item: ItemInfo, c: Criteria) -> bool:
@@ -202,18 +204,11 @@ def matches_quick(item: ItemInfo, c: Criteria) -> bool:
             if c.date_to and d.date() > c.date_to:
                 return False
 
-    terms = split_terms(c.sender)
-    if terms and not _contains_any(item.sender, terms):
-        return False
-    terms = split_terms(c.recipients)
-    if terms and not _contains_any(item.recipients, terms):
-        return False
-    terms = split_terms(c.subject)
-    if terms and not _contains_any(item.subject, terms):
-        return False
-    terms = split_terms(c.category)
-    if terms and not _contains_any(item.categories, terms):
-        return False
+    for text, value in ((c.sender, item.sender), (c.recipients, item.recipients),
+                        (c.subject, item.subject), (c.category, item.categories)):
+        terms = split_terms(text)
+        if terms and not _contains_any(value, terms):
+            return False
     return True
 
 
@@ -229,9 +224,9 @@ def matches_deep(subject: str, body: str, attachment_count: int, c: Criteria) ->
     return True
 
 
-def parse_date(text: str) -> dt.date | None:
+def parse_date(text) -> dt.date | None:
     """Accepts 2024-03-05, 2024/3/5, 05/03/2024 (day/month/year) or ''."""
-    text = (text or "").strip()
+    text = str(text or "").strip()
     if not text:
         return None
     for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y", "%d-%m-%Y", "%Y.%m.%d", "%d.%m.%Y"):
@@ -263,36 +258,33 @@ def safe_name(text: str | None, max_len: int = 80, fallback: str = "(no subject)
     return s
 
 
-LAYOUTS: dict[str, str] = {
-    "folder_year": "Outlook folder, then year",
-    "type_year": "Item type, then year",
-    "year_month": "Year, then month",
-    "flat": "All in one folder",
-}
+LAYOUTS = ("folder_year", "type_year", "year_month", "flat")
 
 
-def relative_dir(item: ItemInfo, layout: str, include_store: bool) -> list[str]:
+def relative_dir(item: ItemInfo, layout: str, include_store: bool, t: Translator | None = None) -> list[str]:
     """Sub-folders (as a list of names) where an item's files should go."""
+    t = t or Translator()
     d = item.display_date
-    year = str(d.year) if d else "No date"
+    year = str(d.year) if d else t("no_date")
     if layout == "flat":
         return []
     if layout == "type_year":
-        return [KIND_FOLDER_NAMES[item.kind], year]
+        return [t("kind_" + item.kind), year]
     if layout == "year_month":
-        return [year, f"{d.month:02d}" if d else "No date"]
+        return [year, f"{d.month:02d}" if d else t("no_date")]
     parts = [safe_name(p, 60, "_") for p in item.folder_parts if p]
     if include_store:
         parts.insert(0, safe_name(item.store_name, 60, "Mailbox"))
     return parts + [year]
 
 
-def file_stem(item: ItemInfo) -> str:
+def file_stem(item: ItemInfo, t: Translator | None = None) -> str:
+    t = t or Translator()
+    if item.kind == "contact":
+        return safe_name(item.subject, 80, t("no_name"))
     d = item.display_date
     prefix = d.strftime("%Y-%m-%d %H%M") if d else "0000-00-00"
-    if item.kind == "contact":
-        return safe_name(item.subject, 80, "(no name)")
-    return f"{prefix} - {safe_name(item.subject)}"
+    return f"{prefix} - {safe_name(item.subject, 80, t('no_subject'))}"
 
 
 class PathAllocator:
@@ -329,13 +321,7 @@ def unique_dir(parent: str, name: str) -> str:
 
 # ------------------------------------------------------- export settings
 
-
-FILE_FORMATS: dict[str, str] = {
-    "msg": "Outlook files (.msg)",
-    "mht": "Web pages (.mht)",
-    "pdf": "PDF files (needs Word)",
-    "txt": "Plain text (.txt)",
-}
+FILE_FORMATS = ("msg", "mht", "pdf", "txt")
 
 
 @dataclass
@@ -348,16 +334,37 @@ class ExportOptions:
     save_attachments: bool = False
     layout: str = "folder_year"
     write_index: bool = True
+    move_after: bool = False  # remove from the mailbox once safely in the PST
+    lang: str = "en"
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "ExportOptions":
+        layout = d.get("layout", "folder_year")
+        return cls(
+            output_dir=str(d.get("output_dir", "")).strip(),
+            archive_name=str(d.get("archive_name", "")).strip(),
+            make_pst=bool(d.get("make_pst", True)),
+            keep_pst_open=bool(d.get("keep_pst_open", True)),
+            file_formats={f for f in d.get("file_formats", []) if f in FILE_FORMATS},
+            save_attachments=bool(d.get("save_attachments", False)),
+            layout=layout if layout in LAYOUTS else "folder_year",
+            write_index=bool(d.get("write_index", True)),
+            move_after=bool(d.get("move_after", False)),
+            lang=d.get("lang", "en"),
+        )
 
     def validate(self) -> None:
+        t = Translator(self.lang)
         if not self.output_dir:
-            raise ValueError("Choose a folder to save the archive in.")
+            raise ValueError(t("v_no_dir"))
         if not os.path.isdir(self.output_dir):
-            raise ValueError(f"This folder does not exist: {self.output_dir}")
+            raise ValueError(t("v_bad_dir", path=self.output_dir))
         if not safe_name(self.archive_name, 80, ""):
-            raise ValueError("Give the archive a name.")
+            raise ValueError(t("v_no_name"))
         if not (self.make_pst or self.file_formats or self.save_attachments or self.write_index):
-            raise ValueError("Choose at least one way to save (PST, files or the Excel list).")
+            raise ValueError(t("v_no_output"))
+        if self.move_after and not self.make_pst:
+            raise ValueError(t("v_move_needs_pst"))
 
 
 @dataclass
@@ -366,6 +373,8 @@ class ExportResult:
     pst_path: str = ""
     copied: dict[str, int] = field(default_factory=dict)
     files_written: int = 0
+    removed: int = 0
+    kept: int = 0
     errors: list[str] = field(default_factory=list)
     cancelled: bool = False
 
@@ -373,37 +382,29 @@ class ExportResult:
     def total(self) -> int:
         return sum(self.copied.values())
 
+    def to_dict(self) -> dict:
+        return {
+            "folder": self.folder, "pst_path": self.pst_path, "copied": self.copied,
+            "total": self.total, "files_written": self.files_written, "removed": self.removed,
+            "kept": self.kept, "errors": self.errors, "cancelled": self.cancelled,
+        }
 
-def summarize(items: list[ItemInfo]) -> str:
-    """Short text: how many items per type and per year."""
-    if not items:
-        return "No items match these choices."
+
+def summarize(items: list[ItemInfo]) -> dict:
+    """How many items per type and per year."""
     by_kind: dict[str, int] = {}
     by_year: dict[str, int] = {}
     for it in items:
         by_kind[it.kind] = by_kind.get(it.kind, 0) + 1
         d = it.display_date
-        y = str(d.year) if d else "No date"
+        y = str(d.year) if d else "-"
         by_year[y] = by_year.get(y, 0) + 1
-    lines = [f"{len(items):,} items match:"]
-    for k in ITEM_KINDS:
-        if k in by_kind:
-            lines.append(f"   {ITEM_KINDS[k]}: {by_kind[k]:,}")
-    lines.append("   By year: " + ", ".join(f"{y}: {n:,}" for y, n in sorted(by_year.items())))
-    return "\n".join(lines)
+    return {"total": len(items), "by_kind": by_kind,
+            "by_year": dict(sorted(by_year.items()))}
 
 
-INDEX_COLUMNS = [
-    "Type",
-    "Outlook folder",
-    "Date",
-    "From",
-    "To / CC",
-    "Subject",
-    "Categories",
-    "Attachments",
-    "Saved files",
-]
+INDEX_KEYS = ["col_type", "col_folder", "col_date", "col_from", "col_to", "col_subject",
+              "col_categories", "col_attachments", "col_files", "col_removed"]
 
 
 def csv_safe(value: str) -> str:
@@ -412,11 +413,13 @@ def csv_safe(value: str) -> str:
     return "'" + value if value[:1] in ("=", "+", "-", "@") else value
 
 
-def index_row(item: ItemInfo, files: list[str], base_dir: str) -> list[str]:
+def index_row(item: ItemInfo, files: list[str], base_dir: str, t: Translator | None = None,
+              removed: bool = False) -> list[str]:
+    t = t or Translator()
     d = item.display_date
     rel = [os.path.relpath(f, base_dir) for f in files]
     row = [
-        KIND_FOLDER_NAMES[item.kind],
+        t("kind_" + item.kind),
         f"{item.store_name}/{item.folder_path}",
         d.strftime("%Y-%m-%d %H:%M") if d else "",
         item.sender,
@@ -425,5 +428,13 @@ def index_row(item: ItemInfo, files: list[str], base_dir: str) -> list[str]:
         item.categories,
         "" if item.attachments is None else str(item.attachments),
         " | ".join(rel),
+        t("yes") if removed else "",
     ]
     return [csv_safe(v) for v in row]
+
+
+def preview_row(item: ItemInfo) -> dict:
+    d = item.display_date
+    return {"kind": item.kind, "date": d.strftime("%Y-%m-%d %H:%M") if d else "",
+            "from": item.sender, "subject": item.subject,
+            "folder": f"{item.store_name}/{item.folder_path}"}

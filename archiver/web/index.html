@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Outlook Archiver</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <img src="icon.svg" alt="" width="36" height="36">
+    <div>
+      <h1 data-t="app_title"></h1>
+      <p data-t="app_sub"></p>
+    </div>
+  </div>
+  <div class="top-actions">
+    <span id="conn" class="pill"><span class="dot"></span><span id="conn-text"></span></span>
+    <button id="lang-btn" class="ghost" type="button"></button>
+  </div>
+</header>
+
+<div id="banner" class="banner" hidden>
+  <div class="banner-text" id="banner-text"></div>
+  <div class="banner-actions">
+    <button id="banner-retry" class="secondary small" type="button" data-t="reconnect" hidden></button>
+    <button id="banner-close" class="ghost small" type="button" aria-label="Close">✕</button>
+  </div>
+</div>
+
+<main class="layout">
+  <aside class="card folders">
+    <div class="card-head">
+      <span class="step">1</span>
+      <div><h2 data-t="s1"></h2><p class="hint" data-t="s1_hint"></p></div>
+    </div>
+    <input id="folder-search" class="search" type="search" data-tp="search_folders" autocomplete="off">
+    <div id="tree" class="tree" role="tree"></div>
+    <div class="tree-actions">
+      <button id="tick-all" class="link" type="button" data-t="tick_all"></button>
+      <button id="untick-all" class="link" type="button" data-t="untick_all"></button>
+      <span class="spacer"></span>
+      <button id="reconnect" class="link" type="button" data-t="reconnect"></button>
+    </div>
+  </aside>
+
+  <section class="main">
+    <div class="card">
+      <div class="card-head"><span class="step">2</span><h2 data-t="s2"></h2></div>
+      <div id="kinds" class="chips"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><span class="step">3</span><h2 data-t="s3"></h2></div>
+      <div id="periods" class="chips"></div>
+      <div class="period-extra">
+        <select id="year" hidden></select>
+        <div id="custom" class="custom" hidden>
+          <label><span data-t="from"></span><input id="date-from" type="date"></label>
+          <label><span data-t="to"></span><input id="date-to" type="date"></label>
+        </div>
+      </div>
+      <p class="range" id="range"></p>
+      <label class="inline">
+        <span data-t="date_field"></span>
+        <select id="date-field"></select>
+      </label>
+    </div>
+
+    <details class="card" id="filters-card">
+      <summary class="card-head">
+        <span class="step">4</span>
+        <h2 data-t="s4"></h2>
+        <span class="badge" id="filters-badge"></span>
+        <span class="chev" aria-hidden="true"></span>
+      </summary>
+      <div class="grid2">
+        <label><span data-t="f_sender"></span><input id="f-sender" type="text" autocomplete="off"></label>
+        <label><span data-t="f_recipients"></span><input id="f-recipients" type="text" autocomplete="off"></label>
+        <label><span data-t="f_subject"></span><input id="f-subject" type="text" autocomplete="off"></label>
+        <label><span data-t="f_category"></span><input id="f-category" type="text" autocomplete="off"></label>
+        <label class="wide"><span data-t="f_body"></span><input id="f-body" type="text" autocomplete="off">
+          <small class="hint" data-t="f_body_hint"></small></label>
+        <div class="wide">
+          <span class="label" data-t="f_attachments"></span>
+          <div class="segmented" id="attachments" role="radiogroup"></div>
+        </div>
+      </div>
+      <p class="hint" data-t="f_hint"></p>
+    </details>
+
+    <div class="card">
+      <div class="card-head"><span class="step">5</span><h2 data-t="s5"></h2></div>
+      <div class="tile">
+        <input type="checkbox" id="o-pst">
+        <div class="tile-body">
+          <label for="o-pst"><strong data-t="o_pst"></strong><small data-t="o_pst_d"></small></label>
+          <label class="sub"><input type="checkbox" id="o-pst-show"> <span data-t="o_pst_show"></span></label>
+        </div>
+      </div>
+      <div class="tile static">
+        <span class="tile-icon" aria-hidden="true">＋</span>
+        <div class="tile-body">
+          <strong data-t="o_files"></strong>
+          <div id="formats" class="chips small"></div>
+          <label class="sub"><input type="checkbox" id="o-atts"> <span data-t="o_atts"></span></label>
+        </div>
+      </div>
+      <div class="tile">
+        <input type="checkbox" id="o-index">
+        <div class="tile-body">
+          <label for="o-index"><strong data-t="o_index"></strong><small data-t="o_index_d"></small></label>
+        </div>
+      </div>
+      <div class="grid2 top-gap">
+        <label><span data-t="o_layout"></span><select id="layout"></select></label>
+        <label><span data-t="o_name"></span><input id="o-name" type="text" autocomplete="off"></label>
+        <label class="wide"><span data-t="o_dir"></span>
+          <span class="with-button"><input id="o-dir" type="text" dir="ltr" autocomplete="off">
+          <button id="browse" class="secondary" type="button" data-t="browse"></button></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><span class="step">6</span><h2 data-t="s6"></h2></div>
+      <div class="tile">
+        <input type="checkbox" id="o-skip">
+        <div class="tile-body">
+          <label for="o-skip"><strong data-t="o_skip"></strong></label>
+          <small><span id="history-text"></span>
+          <button id="forget" class="link small" type="button" data-t="forget"></button></small>
+        </div>
+      </div>
+      <div class="tile danger" id="move-tile">
+        <input type="checkbox" id="o-move">
+        <div class="tile-body">
+          <label for="o-move"><strong data-t="o_move"></strong><small data-t="o_move_d"></small></label>
+          <small class="warn" id="move-needs-pst" data-t="o_move_needs_pst" hidden></small>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="bar">
+  <div class="bar-text">
+    <div id="summary-line" class="summary-line"></div>
+    <div id="count-line" class="count-line"></div>
+  </div>
+  <div class="bar-buttons">
+    <button id="btn-count" class="secondary" type="button" data-t="count_btn"></button>
+    <button id="btn-archive" class="primary" type="button" data-t="archive_btn"></button>
+  </div>
+</footer>
+
+<dialog id="dlg-lang" class="dialog narrow">
+  <h3>Choose a language · اختر اللغة</h3>
+  <div class="lang-choices">
+    <button type="button" class="big" data-lang="en">English</button>
+    <button type="button" class="big" data-lang="ar">العربية</button>
+  </div>
+</dialog>
+
+<dialog id="dlg-progress" class="dialog narrow">
+  <h3 id="prog-title"></h3>
+  <div class="progress"><div id="prog-bar"></div></div>
+  <p id="prog-text" class="prog-text"></p>
+  <p id="prog-time" class="hint"></p>
+  <div class="dialog-buttons"><button id="prog-stop" class="secondary" type="button" data-t="stop"></button></div>
+</dialog>
+
+<dialog id="dlg-confirm" class="dialog">
+  <h3 data-t="confirm_title"></h3>
+  <p class="big-number" id="conf-number"></p>
+  <dl class="facts" id="conf-facts"></dl>
+  <div id="conf-move" class="callout danger" hidden>
+    <p data-t="confirm_move"></p>
+    <label><input type="checkbox" id="conf-move-ok"> <span data-t="confirm_move_ok"></span></label>
+  </div>
+  <p id="conf-copy" class="callout" data-t="confirm_copy"></p>
+  <div class="dialog-buttons">
+    <button id="conf-cancel" class="secondary" type="button" data-t="cancel"></button>
+    <button id="conf-start" class="primary" type="button" data-t="start"></button>
+  </div>
+</dialog>
+
+<dialog id="dlg-done" class="dialog">
+  <div class="done-head"><span id="done-icon" class="done-icon">✓</span><h3 id="done-title"></h3></div>
+  <div class="tiles" id="done-tiles"></div>
+  <p class="where"><span data-t="done_where"></span> <bdi id="done-folder" dir="ltr"></bdi></p>
+  <details id="done-problems" hidden><summary id="done-problems-title"></summary><ul id="done-problems-list"></ul></details>
+  <div class="dialog-buttons">
+    <button id="done-close" class="secondary" type="button" data-t="close"></button>
+    <button id="done-open" class="primary" type="button" data-t="open_folder"></button>
+  </div>
+</dialog>
+
+<dialog id="dlg-preview" class="dialog wide">
+  <div class="preview-head"><h3 data-t="preview_title"></h3>
+    <button id="preview-close" class="ghost" type="button" aria-label="Close">✕</button></div>
+  <div class="preview-summary">
+    <div><h4 data-t="by_type"></h4><div id="pv-types" class="chips small static"></div></div>
+    <div><h4 data-t="by_year"></h4><div id="pv-years" class="bars"></div></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th data-t="col_date"></th><th data-t="col_type"></th><th data-t="col_from"></th><th data-t="col_subject"></th><th data-t="col_folder"></th></tr></thead>
+      <tbody id="pv-rows"></tbody>
+    </table>
+  </div>
+  <p class="hint" id="pv-more"></p>
+</dialog>
+
+<dialog id="dlg-message" class="dialog narrow">
+  <p id="msg-text" class="msg-text"></p>
+  <div class="dialog-buttons">
+    <button id="msg-no" class="secondary" type="button" data-t="cancel"></button>
+    <button id="msg-yes" class="primary" type="button" data-t="ok"></button>
+  </div>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>

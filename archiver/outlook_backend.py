@@ -29,21 +29,13 @@ PST_FOLDER_TYPE = {0: 6, 1: 9, 2: 10, 3: 13, 4: 11, 5: 12, 6: 6, 7: 10}
 TABLE_COLUMNS = [
     "EntryID", "MessageClass", "Subject", "SenderName", "Organizer", "To", "CC",
     "Categories", "ReceivedTime", "SentOn", "CreationTime", "LastModificationTime", "Start",
+    "End", "IsRecurring",
 ]
+OL_FOLDER_DELETED_ITEMS = 3
 
 PR_ATTACHMENT_HIDDEN = "http://schemas.microsoft.com/mapi/proptag/0x7FFE000B"
 PR_ATTACH_CONTENT_ID = "http://schemas.microsoft.com/mapi/proptag/0x3712001F"
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp"}
-
-NO_CLASSIC_OUTLOOK = (
-    "This tool could not reach classic Outlook on this laptop.\n\n"
-    "It works with classic Outlook (the version with a 'File' menu at the top left).\n\n"
-    "* If you see a 'New Outlook' switch at the top right of Outlook, turn it OFF to go back "
-    "to classic Outlook, then run this tool again.\n"
-    "* If classic Outlook is not installed, install the Microsoft 365 desktop apps "
-    "(Outlook is included) from https://portal.office.com, open it once to sign in, "
-    "then run this tool again."
-)
 
 
 def _err(e: Exception) -> str:
@@ -60,12 +52,15 @@ class OutlookBackend(Backend):
     label = "Outlook"
 
     def __init__(self) -> None:
+        super().__init__()
         self.app = None
         self.ns = None
         # key -> (entry_id, store_id, store_name, folder_parts, default_item_type)
         self._folders: dict[str, tuple[str, str, str, tuple[str, ...], int]] = {}
         self._pst_root = None
         self._pst_folders: dict[tuple, object] = {}
+        self._pst_expected: dict[tuple, int] = {}
+        self._protected: set[str] = set()  # folder keys inside Deleted Items
         self._word = None
         self._word_failed = False
         self._tmp = None
@@ -78,12 +73,13 @@ class OutlookBackend(Backend):
             self.ns = self.app.GetNamespace("MAPI")
             count = self.ns.Stores.Count
         except pywintypes.com_error as e:
-            raise BackendError(NO_CLASSIC_OUTLOOK + f"\n\n(Technical details: {_err(e)})") from e
-        return f"Connected to Outlook - {count} mailbox(es) / data file(s) found."
+            raise BackendError(self.t("e_no_outlook") + f"\n\n({_err(e)})") from e
+        return self.t("connected", n=count)
 
     # -------------------------------------------------------- folder tree
     def list_tree(self) -> list[FolderNode]:
         self._folders.clear()
+        self._protected.clear()
         nodes: list[FolderNode] = []
         stores = self.ns.Stores
         for i in range(1, stores.Count + 1):
@@ -94,12 +90,17 @@ class OutlookBackend(Backend):
                 sid = store.StoreID
             except pywintypes.com_error:
                 continue
-            node = FolderNode(key=f"store{i}", name=name, is_store=True)
-            node.children = self._children(root, sid, name, (), 0)
+            try:
+                deleted_eid = store.GetDefaultFolder(OL_FOLDER_DELETED_ITEMS).EntryID
+            except pywintypes.com_error:
+                deleted_eid = None
+            node = FolderNode(key=f"store{i}", name=name, label=name, is_store=True)
+            node.children = self._children(root, sid, name, (), 0, deleted_eid, False)
             nodes.append(node)
         return nodes
 
-    def _children(self, folder, sid: str, sname: str, parts: tuple, depth: int) -> list[FolderNode]:
+    def _children(self, folder, sid: str, sname: str, parts: tuple, depth: int,
+                  deleted_eid: str | None, protected: bool) -> list[FolderNode]:
         out: list[FolderNode] = []
         if depth > 15:
             return out
@@ -126,8 +127,11 @@ class OutlookBackend(Backend):
             key = f"f{len(self._folders)}"
             p = parts + (name,)
             self._folders[key] = (eid, sid, sname, p, item_type)
-            node = FolderNode(key=key, name=name, count=count)
-            node.children = self._children(f, sid, sname, p, depth + 1)
+            is_protected = protected or (deleted_eid is not None and eid == deleted_eid)
+            if is_protected:
+                self._protected.add(key)
+            node = FolderNode(key=key, name=name, label="/".join((sname,) + p), count=count)
+            node.children = self._children(f, sid, sname, p, depth + 1, deleted_eid, is_protected)
             out.append(node)
         return out
 
@@ -145,7 +149,7 @@ class OutlookBackend(Backend):
             cols = table.Columns
             cols.RemoveAll()
         except pywintypes.com_error as e:
-            progress(f"Skipped {self.folder_label(key)}: {_err(e)}", 0, 0)
+            progress(self.t("e_skip_folder", folder=self.folder_label(key), err=_err(e)), 0, 0)
             return
         added: list[str] = []
         for name in TABLE_COLUMNS:
@@ -168,7 +172,7 @@ class OutlookBackend(Backend):
                 break
             n += 1
             if n % 250 == 0:
-                progress(f"Looking in {label} ... {n:,} of {total:,}", n, total)
+                progress(self.t("p_looking_n", folder=label, n=n, total=total), n, total)
             v = dict(zip(added, row.GetValues()))
             item = ItemInfo(
                 entry_id=str(v.get("EntryID") or ""),
@@ -186,6 +190,8 @@ class OutlookBackend(Backend):
                 created=clean_date(v.get("CreationTime")),
                 modified=clean_date(v.get("LastModificationTime")),
                 start=clean_date(v.get("Start")),
+                end=clean_date(v.get("End")),
+                recurring=bool(v.get("IsRecurring") or False),
             )
             if not item.entry_id:
                 continue
@@ -224,10 +230,11 @@ class OutlookBackend(Backend):
     # --------------------------------------------------------------- PST
     def pst_begin(self, path: str, display_name: str) -> str:
         self._pst_folders.clear()
+        self._pst_expected.clear()
         try:
             self.ns.AddStoreEx(path, OL_STORE_UNICODE)
         except pywintypes.com_error as e:
-            raise BackendError(f"Outlook could not create the PST file {path}: {_err(e)}") from e
+            raise BackendError(self.t("e_pst_create", path=path, err=_err(e))) from e
         target = os.path.normcase(os.path.abspath(path))
         stores = self.ns.Stores
         for i in range(1, stores.Count + 1):
@@ -243,11 +250,15 @@ class OutlookBackend(Backend):
                 except pywintypes.com_error:
                     pass
                 return path
-        raise BackendError("Outlook created the PST file but could not open it.")
+        raise BackendError(self.t("e_pst_open"))
+
+    def _pst_path(self, item: ItemInfo, include_store: bool) -> tuple:
+        _, _, sname, parts, _ = self._folders[item.folder_key]
+        return ((sname,) if include_store else ()) + parts
 
     def _pst_folder(self, item: ItemInfo, include_store: bool):
-        _, _, sname, parts, item_type = self._folders[item.folder_key]
-        path = ((sname,) if include_store else ()) + parts
+        item_type = self._folders[item.folder_key][4]
+        path = self._pst_path(item, include_store)
         if path in self._pst_folders:
             return self._pst_folders[path]
         folder = self._pst_root
@@ -273,9 +284,11 @@ class OutlookBackend(Backend):
 
     def pst_copy(self, handle, item: ItemInfo, include_store: bool) -> None:
         dest = self._pst_folder(item, include_store)
+        path = self._pst_path(item, include_store)
         if item.kind == "appointment":
             try:
                 handle.CopyTo(dest, OL_CREATE_APPOINTMENT)  # keeps the subject without "Copy:"
+                self._pst_expected[path] = self._pst_expected.get(path, 0) + 1
                 return
             except (pywintypes.com_error, AttributeError):
                 pass
@@ -288,6 +301,23 @@ class OutlookBackend(Backend):
             except pywintypes.com_error:
                 pass
             raise
+        self._pst_expected[path] = self._pst_expected.get(path, 0) + 1
+
+    def pst_verify(self) -> str | None:
+        for path, expected in self._pst_expected.items():
+            try:
+                found = int(self._pst_folders[path].Items.Count)
+            except (pywintypes.com_error, KeyError) as e:
+                return _err(e)
+            if found < expected:
+                return self.t("v_missing", folder="/".join(path), found=found, expected=expected)
+        return None
+
+    def in_protected_folder(self, item: ItemInfo) -> bool:
+        return item.folder_key in self._protected
+
+    def remove_item(self, item: ItemInfo) -> None:
+        self.open_item(item).Delete()  # goes to Deleted Items
 
     def pst_end(self, keep_open: bool) -> None:
         if self._pst_root is not None and not keep_open:
@@ -345,7 +375,7 @@ class OutlookBackend(Backend):
                   alloc: PathAllocator) -> str:
         word = self._word_app()
         if word is None:
-            raise BackendError("PDF files were skipped: Microsoft Word is not installed on this laptop.")
+            raise BackendError(self.t("e_no_word"))
         if self._tmp is None:
             self._tmp = tempfile.mkdtemp(prefix="outlook-archiver-")
         tmp = os.path.join(self._tmp, "item.mht")
@@ -371,7 +401,7 @@ class OutlookBackend(Backend):
                          alloc: PathAllocator) -> list[str]:
         saved: list[str] = []
         atts = handle.Attachments
-        att_dir = os.path.join(directory, safe_name(item.subject, 50) + " - attachments")
+        att_dir = os.path.join(directory, self.t("attachments_dir", name=safe_name(item.subject, 50)))
         for i in range(1, atts.Count + 1):
             a = atts.Item(i)
             try:

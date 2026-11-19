@@ -1,26 +1,29 @@
-"""Start the app.
+"""Start the program.
 
-    python OutlookArchiver.py          use classic Outlook on this laptop
-    python OutlookArchiver.py --demo   try it with made-up data (any computer)
+    python OutlookArchiver.py            use classic Outlook on this laptop
+    python OutlookArchiver.py --demo     try it with made-up data (any computer)
+    python OutlookArchiver.py --no-window   do not open a window; print the address
 """
 import sys
 
 
 def main() -> None:
-    from archiver.gui import run
+    from archiver.server import run_app
 
-    if "--demo" in sys.argv:
-        from archiver.demo_backend import DemoBackend
+    demo = "--demo" in sys.argv
+    show = "--no-window" not in sys.argv
+    port = 0
+    if "--port" in sys.argv:
+        port = int(sys.argv[sys.argv.index("--port") + 1])
 
-        run(DemoBackend)
-        return
+    if demo:
+        from archiver.demo_backend import DemoBackend as Backend
+    elif sys.platform != "win32":
+        sys.exit("This program needs Windows with classic Outlook. Use --demo to try it elsewhere.")
+    else:
+        from archiver.outlook_backend import OutlookBackend as Backend
 
-    if sys.platform != "win32":
-        sys.exit("This tool needs Windows with classic Outlook. Use --demo to try it elsewhere.")
-
-    from archiver.outlook_backend import OutlookBackend
-
-    run(OutlookBackend)
+    run_app(Backend, show_window=show, port=port)
 
 
 if __name__ == "__main__":

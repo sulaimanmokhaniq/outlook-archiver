@@ -1,0 +1,240 @@
+"""Remembering, skipping, moving, Arabic output and the local server."""
+import csv
+import datetime as dt
+import http.client
+import json
+import os
+import time
+
+import pytest
+
+from archiver.base import BackendError
+from archiver.core import Criteria, ExportOptions, ItemInfo
+from archiver.demo_backend import DemoBackend
+from archiver.i18n import MESSAGES
+from archiver.server import Controller, Server
+from archiver.storage import History, Settings
+
+
+@pytest.fixture(autouse=True)
+def home(tmp_path, monkeypatch):
+    monkeypatch.setenv("OUTLOOK_ARCHIVER_HOME", str(tmp_path / "home"))
+    return tmp_path
+
+
+def _noop(*_a):
+    return None
+
+
+def _all_keys(b):
+    tree = b.list_tree()
+    keys = []
+
+    def walk(n):
+        if not n.is_store:
+            keys.append(n.key)
+        for c in n.children:
+            walk(c)
+    for s in tree:
+        walk(s)
+    return keys
+
+
+def test_both_languages_have_the_same_messages():
+    assert set(MESSAGES["en"]) == set(MESSAGES["ar"])
+
+
+def test_settings_remember_and_ignore_unknown(tmp_path):
+    s = Settings(str(tmp_path / "s.json"))
+    assert s.load()["lang"] == ""
+    s.save({"lang": "ar", "kinds": ["mail"], "evil": 1})
+    data = Settings(str(tmp_path / "s.json")).load()
+    assert data["lang"] == "ar" and data["kinds"] == ["mail"] and "evil" not in data
+
+
+def test_removal_rules():
+    now = dt.datetime(2026, 1, 1)
+    mail = ItemInfo("1", "s", "f", ("Inbox",), "M", "IPM.Note")
+    assert mail.removal_blocker(now) is None
+    contact = ItemInfo("1", "s", "f", ("C",), "M", "IPM.Contact")
+    assert contact.removal_blocker(now) == "kind"
+    past = ItemInfo("1", "s", "f", ("Cal",), "M", "IPM.Appointment",
+                    start=dt.datetime(2020, 1, 1), end=dt.datetime(2020, 1, 1, 1))
+    assert past.removal_blocker(now) is None
+    past.recurring = True
+    assert past.removal_blocker(now) == "recurring"
+    future = ItemInfo("1", "s", "f", ("Cal",), "M", "IPM.Appointment",
+                      start=dt.datetime(2027, 1, 1), end=dt.datetime(2027, 1, 1, 1))
+    assert future.removal_blocker(now) == "future"
+
+
+def test_skip_already_archived(tmp_path):
+    b = DemoBackend()
+    keys = _all_keys(b)
+    crit = Criteria(kinds={"mail"}, date_from=dt.date(2020, 1, 1), date_to=dt.date(2020, 12, 31))
+    items = b.scan(keys, crit, _noop, lambda: False)
+    hist = History(str(tmp_path / "h.sqlite3"))
+    opts = ExportOptions(output_dir=str(tmp_path), archive_name="A", write_index=True, make_pst=False)
+    res = b.export(items[:10], opts, _noop, lambda: False, hist.record)
+    new, skipped = hist.filter_new(items)
+    assert skipped == 10 and len(new) == len(items) - 10
+    # deleting the old archive folder means those items are archived again
+    import shutil
+    shutil.rmtree(res.folder)
+    new, skipped = hist.filter_new(items)
+    assert skipped == 0
+
+
+def test_move_removes_only_safe_items(tmp_path):
+    b = DemoBackend()
+    keys = _all_keys(b)
+    crit = Criteria(kinds={"mail", "appointment", "contact"}, date_to=dt.date(2020, 12, 31))
+    items = b.scan(keys, crit, _noop, lambda: False)
+    opts = ExportOptions(output_dir=str(tmp_path), archive_name="Move", move_after=True)
+    res = b.export(items, opts, _noop, lambda: False)
+    assert not res.errors
+    assert res.removed > 0 and res.kept > 0
+    kept_kinds = {"contact"}
+    after = b.scan(keys, crit, _noop, lambda: False)
+    left = {(it.kind, it.recurring, it.folder_parts[0]) for it in after}
+    # what is left: contacts, recurring meetings, and Deleted Items content
+    for kind, recurring, folder in left:
+        assert kind in kept_kinds or recurring or folder == "Deleted Items"
+    with open(os.path.join(res.folder, "Archive list.csv"), encoding="utf-8-sig") as f:
+        rows = list(csv.reader(f))
+    assert sum(1 for r in rows[1:] if r[-1] == "Yes") == res.removed
+
+
+def test_move_needs_pst(tmp_path):
+    with pytest.raises(ValueError):
+        ExportOptions(output_dir=str(tmp_path), archive_name="x", make_pst=False, move_after=True).validate()
+
+
+def test_cancelled_run_removes_nothing(tmp_path):
+    b = DemoBackend()
+    keys = _all_keys(b)
+    items = b.scan(keys, Criteria(kinds={"mail"}), _noop, lambda: False)
+    calls = {"n": 0}
+
+    def cancel_midway():
+        calls["n"] += 1
+        return calls["n"] > 20
+
+    opts = ExportOptions(output_dir=str(tmp_path), archive_name="C", move_after=True)
+    res = b.export(items, opts, _noop, cancel_midway)
+    assert res.cancelled and res.removed == 0
+
+
+def test_arabic_output(tmp_path):
+    b = DemoBackend()
+    keys = _all_keys(b)
+    items = b.scan(keys, Criteria(kinds={"mail"}, date_from=dt.date(2021, 1, 1),
+                                  date_to=dt.date(2021, 3, 31)), _noop, lambda: False)
+    opts = ExportOptions(output_dir=str(tmp_path), archive_name="أرشيف", lang="ar",
+                         file_formats={"txt"})
+    res = b.export(items, opts, _noop, lambda: False)
+    names = os.listdir(res.folder)
+    assert "قائمة الأرشيف.csv" in names and "اقرأني.txt" in names and "الملفات" in names
+    with open(os.path.join(res.folder, "قائمة الأرشيف.csv"), encoding="utf-8-sig") as f:
+        assert next(csv.reader(f))[0] == "النوع"
+
+
+# ------------------------------------------------------------------ server
+
+class Client:
+    def __init__(self, server):
+        self.s = server
+
+    def call(self, method, path, body=None, token=True, host=None):
+        c = http.client.HTTPConnection("127.0.0.1", self.s.port, timeout=10)
+        headers = {"Host": host or f"127.0.0.1:{self.s.port}"}
+        if token:
+            headers["X-Token"] = self.s.token
+        data = None
+        if body is not None:
+            data = json.dumps(body).encode()
+            headers["Content-Type"] = "application/json"
+        c.request(method, path, body=data, headers=headers)
+        r = c.getresponse()
+        raw = r.read()
+        try:
+            return r.status, json.loads(raw)
+        except ValueError:
+            return r.status, raw
+
+    def wait_idle(self):
+        for _ in range(200):
+            _, st = self.call("GET", "/api/state")
+            if not st["busy"]:
+                return st
+            time.sleep(0.05)
+        raise AssertionError("still busy")
+
+
+@pytest.fixture()
+def client(tmp_path):
+    ctl = Controller(DemoBackend, Settings(str(tmp_path / "s.json")), History(str(tmp_path / "h.sqlite3")))
+    srv = Server(ctl)
+    srv.start()
+    ctl.connect()
+    cl = Client(srv)
+    cl.wait_idle()
+    yield cl
+    srv.stop()
+
+
+def test_server_blocks_strangers(client):
+    assert client.call("GET", "/api/state", token=False)[0] == 401
+    assert client.call("GET", "/api/state", host="evil.example:80")[0] == 403
+    status, body = client.call("GET", "/", token=False)
+    assert status == 200 and b"app.js" in body
+
+
+def test_server_count_then_archive(client, tmp_path):
+    _, tree = client.call("GET", "/api/tree")
+    inbox = [n for n in tree["tree"][0]["children"] if n["name"] == "Inbox"][0]
+    req = {"folders": [inbox["key"]], "criteria": {"kinds": ["mail"], "date_from": "2019-01-01",
+                                                   "date_to": "2019-12-31"}, "skip_archived": True}
+    assert client.call("POST", "/api/count", req)[0] == 200
+    st = client.wait_idle()
+    total = st["scan"]["summary"]["total"]
+    assert total > 0
+    _, preview = client.call("GET", "/api/scan")
+    assert len(preview["rows"]) == total
+    # archiving with an old scan id is refused
+    assert client.call("POST", "/api/archive", {"scan_id": 999, "options": {}})[0] == 400
+    opts = {"output_dir": str(tmp_path / "out"), "archive_name": "Test", "make_pst": True,
+            "file_formats": ["txt"], "write_index": True}
+    status, _ = client.call("POST", "/api/archive", {"scan_id": st["scan"]["id"], "options": opts})
+    assert status == 200
+    st = client.wait_idle()
+    assert st["result"]["total"] == total and not st["result"]["errors"]
+    assert st["history_count"] == total
+    # counting again skips what was just archived
+    client.call("POST", "/api/count", req)
+    st = client.wait_idle()
+    assert st["scan"]["summary"]["total"] == 0 and st["scan"]["skipped"] == total
+
+
+def test_server_settings_roundtrip(client):
+    client.call("POST", "/api/settings", {"lang": "ar", "period": "older2", "lang_bad": 1})
+    _, s = client.call("GET", "/api/settings")
+    assert s["lang"] == "ar" and s["period"] == "older2"
+    client.call("POST", "/api/settings", {"lang": "xx"})
+    assert client.call("GET", "/api/settings")[1]["lang"] == "ar"
+
+
+class NoOutlook(DemoBackend):
+    def connect(self):
+        raise BackendError(self.t("e_no_outlook"))
+
+
+def test_connect_failure_is_reported(tmp_path):
+    ctl = Controller(NoOutlook, Settings(str(tmp_path / "s.json")), History(str(tmp_path / "h.sqlite3")))
+    ctl.connect()
+    for _ in range(100):
+        if not ctl.busy:
+            break
+        time.sleep(0.02)
+    st = ctl.state()
+    assert not st["connected"] and "classic Outlook" in st["error"] and st["error_seq"] == 1
