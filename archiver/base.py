@@ -9,17 +9,21 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import os
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Callable, Iterator
 
 from .core import (
     INDEX_KEYS,
     Criteria,
+    check_key,
+    human_size,
     ExportOptions,
     ExportResult,
     ItemInfo,
     PathAllocator,
     file_stem,
+    folder_size,
     index_row,
     relative_dir,
     safe_name,
@@ -50,10 +54,20 @@ class FolderNode:
     count: int = 0
     children: list["FolderNode"] = field(default_factory=list)
     is_store: bool = False
+    size: int | None = None  # bytes in this folder (for a mailbox: the whole mailbox)
+    file_path: str = ""  # mailbox only: Outlook's data file on this laptop (.ost / .pst)
 
     def to_dict(self) -> dict:
+        file_size = None
+        if self.file_path:
+            try:
+                file_size = os.path.getsize(self.file_path)
+            except OSError:
+                pass
         return {"key": self.key, "name": self.name, "label": self.label, "count": self.count,
-                "is_store": self.is_store, "children": [c.to_dict() for c in self.children]}
+                "is_store": self.is_store, "size": self.size, "file_size": file_size,
+                "file_ext": os.path.splitext(self.file_path)[1].lower() if self.file_path else "",
+                "children": [c.to_dict() for c in self.children]}
 
 
 class Backend:
@@ -91,8 +105,8 @@ class Backend:
     def pst_copy(self, handle, item: ItemInfo, include_store: bool) -> None:
         raise NotImplementedError
 
-    def pst_verify(self) -> str | None:
-        """Check the PST holds everything copied. Returns a problem, or None."""
+    def pst_inventory(self) -> list[ItemInfo]:
+        """Read back every item now in the PST (subject, dates, sender, size)."""
         raise NotImplementedError
 
     def pst_end(self, keep_open: bool) -> None:
@@ -113,6 +127,10 @@ class Backend:
     def remove_item(self, item: ItemInfo) -> None:
         """Move the original to Deleted Items."""
         raise NotImplementedError
+
+    def placeholder_size(self) -> int:
+        """Demo only: the size a real PST would have had (the demo cannot write one)."""
+        return 0
 
     def finish_export(self) -> None:
         """Release helpers such as Word. Called once after every export."""
@@ -146,12 +164,14 @@ class Backend:
         alloc = PathAllocator()
         formats = [f for f in FORMAT_ORDER if f in opts.file_formats]
         files_dir = os.path.join(base, t("files_dir"))
-        rows: dict[int, list[str]] = {}
+        status: dict[int, str] = {}  # item number -> check result key ("chk_ok", ...)
+        files_of: dict[int, list[str]] = {}
+        wanted_files: dict[int, int] = {}
         in_pst: list[tuple[int, ItemInfo]] = []
-        archived: list[ItemInfo] = []
         removed_ids: set[int] = set()
         pst_open = False
         pdf_failed = False
+        processed = 0
 
         try:
             if opts.make_pst:
@@ -165,26 +185,28 @@ class Backend:
                 if cancelled():
                     res.cancelled = True
                     break
+                processed = n + 1
                 progress(t("p_archiving", i=n + 1, n=len(items), subject=item.subject[:70]), n, len(items))
-                what = f"'{item.subject[:60]}' ({item.store_name}/{item.folder_path})"
+                what = _what(item)
                 try:
                     handle = self.open_item(item)
                     if item.attachments is None:
                         item.attachments = self.attachment_count(handle)
                 except Exception as e:  # noqa: BLE001 - report and move on
                     res.errors.append(t("e_open", what=what, err=_short(e)))
+                    status[n] = "chk_not_copied"
                     continue
 
-                ok = True
                 if pst_open:
                     try:
                         self.pst_copy(handle, item, include_store)
                         in_pst.append((n, item))
                     except Exception as e:  # noqa: BLE001
-                        ok = False
+                        status[n] = "chk_not_copied"
                         res.errors.append(t("e_pst_copy", what=what, err=_short(e)))
 
                 files: list[str] = []
+                wanted = 0
                 if formats or opts.save_attachments:
                     directory = os.path.join(files_dir, *relative_dir(item, opts.layout, include_store, t))
                     os.makedirs(directory, exist_ok=True)
@@ -192,35 +214,44 @@ class Backend:
                     for fmt in formats:
                         if fmt == "pdf" and pdf_failed:
                             continue
+                        wanted += 1
                         try:
                             files.append(self.save_file(handle, item, fmt, directory, stem, alloc))
                         except BackendError as e:
-                            if fmt == "pdf":
+                            if fmt == "pdf":  # Word missing: a known gap, reported once
                                 pdf_failed = True
+                                wanted -= 1
                             res.errors.append(str(e))
                         except Exception as e:  # noqa: BLE001
-                            ok = False
                             res.errors.append(t("e_save", what=what, fmt=fmt.upper(), err=_short(e)))
                     if opts.save_attachments and item.attachments:
                         try:
                             files.extend(self.save_attachments(handle, item, directory, alloc))
                         except Exception as e:  # noqa: BLE001
-                            ok = False
+                            wanted += 1
                             res.errors.append(t("e_atts", what=what, err=_short(e)))
+                files_of[n] = files
+                wanted_files[n] = wanted
                 res.files_written += len(files)
-                if ok:
-                    res.copied[item.kind] = res.copied.get(item.kind, 0) + 1
-                    archived.append(item)
-                rows[n] = index_row(item, files, base, t)
 
-            # ---- 2. only if asked, and only after the PST checks out
+            # ---- 2. check: is every chosen item really in the archive?
+            progress(t("p_verifying"), len(items), len(items))
+            res.check = self._check(items, processed, status, in_pst, files_of, wanted_files, pst_open, res)
+            for n, key in status.items():
+                if key == "chk_ok":
+                    kind = items[n].kind
+                    res.copied[kind] = res.copied.get(kind, 0) + 1
+
+            # ---- 3. only if asked, and only what the check found in the PST
             if opts.move_after and pst_open and in_pst and not res.cancelled:
-                progress(t("p_checking"), len(items), len(items))
-                problem = self.pst_verify()
-                if problem:
-                    res.errors.insert(0, t("e_verify", detail=problem))
+                pst_check = res.check.get("pst") or {}
+                if not pst_check.get("checked") or pst_check.get("found", 0) < len(in_pst):
+                    missing = len(in_pst) - pst_check.get("found", 0)
+                    res.errors.insert(0, t("e_verify", detail=t("v_missing_n", n=max(missing, 0))))
                 else:
-                    removable = [(n, it) for n, it in in_pst
+                    progress(t("p_checking"), len(items), len(items))
+                    safe = [(n, it) for n, it in in_pst if status.get(n) == "chk_ok"]
+                    removable = [(n, it) for n, it in safe
                                  if it.removal_blocker() is None and not self.in_protected_folder(it)]
                     res.kept = len(in_pst) - len(removable)
                     for i, (n, item) in enumerate(removable):
@@ -232,9 +263,9 @@ class Backend:
                             self.remove_item(item)
                             removed_ids.add(n)
                             res.removed += 1
+                            res.removed_size += item.size
                         except Exception as e:  # noqa: BLE001
-                            what = f"'{item.subject[:60]}' ({item.store_name}/{item.folder_path})"
-                            res.errors.append(t("e_remove", what=what, err=_short(e)))
+                            res.errors.append(t("e_remove", what=_what(item), err=_short(e)))
         finally:
             if pst_open:
                 try:
@@ -243,16 +274,84 @@ class Backend:
                     res.errors.append(t("e_pst_close", err=_short(e)))
             self.finish_export()
             progress(t("p_writing"), len(items), len(items))
+            for n in range(processed, len(items)):
+                status.setdefault(n, "chk_stopped")
             if opts.write_index:
-                for n in removed_ids:
-                    rows[n][-1] = t("yes")
-                _write_index(os.path.join(base, t("index_file")), [rows[k] for k in sorted(rows)], t)
+                rows = [index_row(item, files_of.get(n, []), base, t, removed=n in removed_ids,
+                                  status=t(status.get(n, "chk_not_checked")))
+                        for n, item in enumerate(items)]
+                _write_index(os.path.join(base, t("index_file")), rows, t)
             _write_readme(base, res, opts, items, t)
-            if on_archived and archived:
-                on_archived(archived, base)
+            res.archive_size = folder_size(base) + self.placeholder_size()
+            done = [items[n] for n, key in status.items() if key == "chk_ok"]
+            if on_archived and done:
+                on_archived(done, base)
 
         progress(t("p_stopped") if res.cancelled else t("p_done"), len(items), len(items))
         return res
+
+    def _check(self, items: list[ItemInfo], processed: int, status: dict[int, str],
+               in_pst: list[tuple[int, ItemInfo]], files_of: dict[int, list[str]],
+               wanted_files: dict[int, int], pst_open: bool, res: ExportResult) -> dict:
+        """Compare what was chosen with what is really in the archive, item by item."""
+        t = self.t
+        check: dict = {"chosen": len(items), "chosen_size": sum(it.size for it in items)}
+
+        if pst_open:
+            pst = {"checked": False, "expected": len(items), "found": 0,
+                   "expected_size": check["chosen_size"], "found_size": 0}
+            try:
+                inventory = self.pst_inventory()
+                pst["checked"] = True
+            except Exception as e:  # noqa: BLE001
+                inventory = []
+                res.errors.insert(0, t("e_check", err=_short(e)))
+            if pst["checked"]:
+                pst["found_size"] = sum(it.size for it in inventory)
+                waiting = Counter(check_key(it) for it in inventory)
+                for n, item in in_pst:
+                    key = check_key(item)
+                    if waiting[key] > 0:
+                        waiting[key] -= 1
+                        pst["found"] += 1
+                    else:
+                        status[n] = "chk_not_in_pst"
+            else:
+                for n, _item in in_pst:
+                    status[n] = "chk_not_checked"
+            check["pst"] = pst
+
+        if any(wanted_files.values()) or any(files_of.values()):
+            expected = found = 0
+            for n, paths in files_of.items():
+                good = [p for p in paths if os.path.isfile(p) and os.path.getsize(p) > 0]
+                need = max(wanted_files.get(n, 0), len(paths))
+                expected += need
+                found += len(good)
+                if len(good) < need and status.get(n) is None:
+                    status[n] = "chk_file_missing"
+            check["files"] = {"expected": expected, "found": found}
+
+        for n in range(processed):
+            status.setdefault(n, "chk_ok")
+        for n in range(processed, len(items)):
+            status[n] = "chk_stopped"
+        ok_items = sum(1 for k in status.values() if k == "chk_ok")
+        check["ok_items"] = ok_items
+        check["ok_size"] = sum(items[n].size for n, k in status.items() if k == "chk_ok")
+        check["ok"] = ok_items == len(items)
+        check["missing"] = [
+            {"subject": items[n].subject, "folder": f"{items[n].store_name}/{items[n].folder_path}",
+             "date": items[n].display_date.strftime("%Y-%m-%d %H:%M") if items[n].display_date else "",
+             "reason": t(k)}
+            for n, k in sorted(status.items()) if k != "chk_ok"
+        ][:500]
+        check["missing_count"] = len(items) - ok_items
+        return check
+
+
+def _what(item: ItemInfo) -> str:
+    return f"'{item.subject[:60]}' ({item.store_name}/{item.folder_path})"
 
 
 def _short(e: Exception) -> str:
@@ -286,6 +385,21 @@ def _write_readme(base: str, res: ExportResult, opts: ExportOptions, items: list
         lines.append(t("r_files", dir=t("files_dir")))
     if opts.write_index:
         lines.append(t("r_index", file=t("index_file")))
+    c = res.check
+    if c:
+        title = t("r_check")
+        lines += ["", title, "-" * len(title), t("r_chk_items", n=c["chosen"], size=human_size(c["chosen_size"]))]
+        if c.get("pst"):
+            p = c["pst"]
+            lines.append(t("r_chk_pst", found=p["found"], n=p["expected"],
+                           size_a=human_size(p["expected_size"]), size_b=human_size(p["found_size"])))
+        if c.get("files"):
+            lines.append(t("r_chk_files", found=c["files"]["found"], n=c["files"]["expected"]))
+        lines.append(t("r_chk_ok") if c["ok"] else t("r_chk_bad", n=c["missing_count"], col=t("col_check")))
+        if c["missing"]:
+            title = t("r_missing")
+            lines += ["", title, "-" * len(title)]
+            lines += [f"- {m['date']}  {m['subject']}  ({m['folder']}) - {m['reason']}" for m in c["missing"]]
     lines.append("")
     if res.removed:
         lines.append(t("r_moved", n=res.removed))

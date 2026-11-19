@@ -180,6 +180,7 @@
   <h3 data-t="confirm_title"></h3>
   <p class="big-number" id="conf-number"></p>
   <dl class="facts" id="conf-facts"></dl>
+  <div id="conf-space" class="space"></div>
   <div id="conf-move" class="callout danger" hidden>
     <p data-t="confirm_move"></p>
     <label><input type="checkbox" id="conf-move-ok"> <span data-t="confirm_move_ok"></span></label>
@@ -193,6 +194,7 @@
 
 <dialog id="dlg-done" class="dialog">
   <div class="done-head"><span id="done-icon" class="done-icon">✓</span><h3 id="done-title"></h3></div>
+  <div id="done-check" class="check" hidden></div>
   <div class="tiles" id="done-tiles"></div>
   <p class="where"><span data-t="done_where"></span> <bdi id="done-folder" dir="ltr"></bdi></p>
   <details id="done-problems" hidden><summary id="done-problems-title"></summary><ul id="done-problems-list"></ul></details>
@@ -203,7 +205,7 @@
 </dialog>
 
 <dialog id="dlg-preview" class="dialog wide">
-  <div class="preview-head"><h3 data-t="preview_title"></h3>
+  <div class="preview-head"><h3><span data-t="preview_title"></span> <small id="pv-total" class="hint"></small></h3>
     <button id="preview-close" class="ghost" type="button" aria-label="Close">✕</button></div>
   <div class="preview-summary">
     <div><h4 data-t="by_type"></h4><div id="pv-types" class="chips small static"></div></div>
@@ -211,7 +213,7 @@
   </div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th data-t="col_date"></th><th data-t="col_type"></th><th data-t="col_from"></th><th data-t="col_subject"></th><th data-t="col_folder"></th></tr></thead>
+      <thead><tr><th data-t="col_date"></th><th data-t="col_type"></th><th data-t="col_from"></th><th data-t="col_subject"></th><th data-t="col_size"></th><th data-t="col_folder"></th></tr></thead>
       <tbody id="pv-rows"></tbody>
     </table>
   </div>

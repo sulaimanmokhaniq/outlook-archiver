@@ -32,6 +32,27 @@ button.
 Your choices are remembered for next time. The "remove from mailbox" option is the
 exception: it always starts off.
 
+## Space, and the check that nothing is missing
+
+**Before starting**, the confirm screen shows:
+* how many items are chosen and how big they are;
+* the free space on the laptop now, and about how much is left after the archive is saved
+  (Start is blocked if it won't fit);
+* the size of the mailbox now, and after archiving (it changes only if "Remove from mailbox"
+  is on);
+* the size of Outlook's own file on the laptop (`.ost`).
+
+**After copying**, the program checks the archive before anything else happens:
+* every chosen item is looked up in the finished PST, one by one, by type, subject, sender
+  and date;
+* the total size in Outlook is compared with the total size in the PST;
+* every saved file must exist and not be empty.
+
+The result appears on the final screen, in the archive's README, and in the **Check** column
+of the Excel list ("OK", "Not copied", "Not found in the PST", "File missing"). Anything
+missing is listed by name. **"Remove from mailbox" runs only if every item was found in the
+PST**; if even one is missing, nothing is removed.
+
 ## Removing items from the mailbox (optional)
 
 This option exists to free up mailbox space. It is built to be safe:

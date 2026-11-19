@@ -85,6 +85,7 @@ class ItemInfo:
     end: dt.datetime | None = None
     recurring: bool = False
     attachments: int | None = None  # filled in only when the item is opened
+    size: int = 0  # bytes, as Outlook counts them (attachments included)
 
     @property
     def kind(self) -> str:
@@ -375,7 +376,10 @@ class ExportResult:
     copied: dict[str, int] = field(default_factory=dict)
     files_written: int = 0
     removed: int = 0
+    removed_size: int = 0
     kept: int = 0
+    check: dict = field(default_factory=dict)  # what was chosen vs what is really in the archive
+    archive_size: int = 0  # bytes on disk, measured at the end
     errors: list[str] = field(default_factory=list)
     cancelled: bool = False
 
@@ -388,6 +392,7 @@ class ExportResult:
             "folder": self.folder, "pst_path": self.pst_path, "copied": self.copied,
             "total": self.total, "files_written": self.files_written, "removed": self.removed,
             "kept": self.kept, "errors": self.errors, "cancelled": self.cancelled,
+            "removed_size": self.removed_size, "archive_size": self.archive_size, "check": self.check,
         }
 
 
@@ -401,11 +406,99 @@ def summarize(items: list[ItemInfo]) -> dict:
         y = str(d.year) if d else "-"
         by_year[y] = by_year.get(y, 0) + 1
     return {"total": len(items), "by_kind": by_kind,
-            "by_year": dict(sorted(by_year.items()))}
+            "by_year": dict(sorted(by_year.items())),
+            "size": sum(it.size for it in items)}
+
+
+# ------------------------------------------------------------ disk space
+
+KB = 1024
+MB = 1024 * KB
+
+
+def estimate_archive_size(items: list[ItemInfo], opts: "ExportOptions") -> int:
+    """About how many bytes the archive will take on disk (on the safe side).
+
+    Outlook's item size includes attachments. A PST stores items about the
+    same size, plus some overhead; .msg files are about the item size again;
+    web pages, PDFs and text hold the message without its attachments.
+    """
+    total = sum(it.size for it in items)
+    text_part = sum(min(it.size, 150 * KB) for it in items)  # the message without big attachments
+    est = 0
+    if opts.make_pst:
+        est += int(total * 1.15) + 1 * MB
+    if "msg" in opts.file_formats:
+        est += total
+    if "mht" in opts.file_formats:
+        est += text_part
+    if "pdf" in opts.file_formats:
+        est += int(text_part * 1.3)
+    if "txt" in opts.file_formats:
+        est += sum(min(it.size, 20 * KB) for it in items)
+    if opts.save_attachments:
+        est += sum(max(0, it.size - 60 * KB) for it in items)
+    if opts.write_index:
+        est += 500 * len(items) + 4 * KB
+    return est
+
+
+def folder_size(path: str) -> int:
+    total = 0
+    for root, _dirs, files in os.walk(path):
+        for name in files:
+            try:
+                total += os.path.getsize(os.path.join(root, name))
+            except OSError:
+                pass
+    return total
+
+
+def free_space(path: str) -> int | None:
+    """Free bytes on the drive that holds path (or its nearest existing parent)."""
+    import shutil
+    p = os.path.abspath(path or ".")
+    while p and not os.path.exists(p):
+        parent = os.path.dirname(p)
+        if parent == p:
+            break
+        p = parent
+    try:
+        return shutil.disk_usage(p).free
+    except OSError:
+        return None
 
 
 INDEX_KEYS = ["col_type", "col_folder", "col_date", "col_from", "col_to", "col_subject",
-              "col_categories", "col_attachments", "col_files", "col_removed"]
+              "col_categories", "col_attachments", "col_files", "col_check", "col_removed"]
+
+
+def check_key(item: ItemInfo) -> tuple:
+    """What stays the same when Outlook copies an item into a PST.
+
+    Used to look up each chosen item in the finished PST. Creation and
+    change dates are left out because a copy gets new ones.
+    """
+    subject = (item.subject or "").strip()
+    if item.kind in ("contact", "task", "note"):
+        return (item.kind, subject)
+    if item.kind == "appointment":
+        if subject.lower().startswith("copy: "):
+            subject = subject[6:]
+        d = item.start
+        return (item.kind, subject, d.strftime("%Y-%m-%d %H:%M") if d else "")
+    d = item.received or item.sent
+    return (item.kind, subject, (item.sender or "").strip().lower(), d.strftime("%Y-%m-%d %H:%M") if d else "")
+
+
+def human_size(n: int | None) -> str:
+    if n is None:
+        return "?"
+    for unit, div in (("GB", 1024 ** 3), ("MB", 1024 ** 2)):
+        if n >= div:
+            v = n / div
+            return f"{v:.0f} {unit}" if v >= 100 else f"{v:.1f} {unit}"
+    return f"{max(1, round(n / 1024)) if n else 0} KB"
 
 
 def csv_safe(value: str) -> str:
@@ -415,7 +508,7 @@ def csv_safe(value: str) -> str:
 
 
 def index_row(item: ItemInfo, files: list[str], base_dir: str, t: Translator | None = None,
-              removed: bool = False) -> list[str]:
+              removed: bool = False, status: str = "") -> list[str]:
     t = t or Translator()
     d = item.display_date
     rel = [os.path.relpath(f, base_dir) for f in files]
@@ -429,6 +522,7 @@ def index_row(item: ItemInfo, files: list[str], base_dir: str, t: Translator | N
         item.categories,
         "" if item.attachments is None else str(item.attachments),
         " | ".join(rel),
+        status,
         t("yes") if removed else "",
     ]
     return [csv_safe(v) for v in row]
@@ -437,5 +531,5 @@ def index_row(item: ItemInfo, files: list[str], base_dir: str, t: Translator | N
 def preview_row(item: ItemInfo) -> dict:
     d = item.display_date
     return {"kind": item.kind, "date": d.strftime("%Y-%m-%d %H:%M") if d else "",
-            "from": item.sender, "subject": item.subject,
+            "from": item.sender, "subject": item.subject, "size": item.size,
             "folder": f"{item.store_name}/{item.folder_path}"}

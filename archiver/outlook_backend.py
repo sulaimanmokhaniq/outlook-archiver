@@ -29,8 +29,9 @@ PST_FOLDER_TYPE = {0: 6, 1: 9, 2: 10, 3: 13, 4: 11, 5: 12, 6: 6, 7: 10}
 TABLE_COLUMNS = [
     "EntryID", "MessageClass", "Subject", "SenderName", "Organizer", "To", "CC",
     "Categories", "ReceivedTime", "SentOn", "CreationTime", "LastModificationTime", "Start",
-    "End", "IsRecurring",
+    "End", "IsRecurring", "Size",
 ]
+PR_MESSAGE_SIZE_EXTENDED = "http://schemas.microsoft.com/mapi/proptag/0x0E080014"  # folder / mailbox size
 OL_FOLDER_DELETED_ITEMS = 3
 
 PR_ATTACHMENT_HIDDEN = "http://schemas.microsoft.com/mapi/proptag/0x7FFE000B"
@@ -59,7 +60,6 @@ class OutlookBackend(Backend):
         self._folders: dict[str, tuple[str, str, str, tuple[str, ...], int]] = {}
         self._pst_root = None
         self._pst_folders: dict[tuple, object] = {}
-        self._pst_expected: dict[tuple, int] = {}
         self._protected: set[str] = set()  # folder keys inside Deleted Items
         self._word = None
         self._word_failed = False
@@ -96,6 +96,14 @@ class OutlookBackend(Backend):
                 deleted_eid = None
             node = FolderNode(key=f"store{i}", name=name, label=name, is_store=True)
             node.children = self._children(root, sid, name, (), 0, deleted_eid, False)
+            node.size = _size_of(store)
+            if node.size is None:
+                sizes = [c.size for c in node.children if c.size is not None]
+                node.size = _total_size(node.children) if sizes else None
+            try:
+                node.file_path = str(store.FilePath or "")
+            except pywintypes.com_error:
+                node.file_path = ""
             nodes.append(node)
         return nodes
 
@@ -130,7 +138,8 @@ class OutlookBackend(Backend):
             is_protected = protected or (deleted_eid is not None and eid == deleted_eid)
             if is_protected:
                 self._protected.add(key)
-            node = FolderNode(key=key, name=name, label="/".join((sname,) + p), count=count)
+            node = FolderNode(key=key, name=name, label="/".join((sname,) + p), count=count,
+                              size=_size_of(f))
             node.children = self._children(f, sid, sname, p, depth + 1, deleted_eid, is_protected)
             out.append(node)
         return out
@@ -192,6 +201,7 @@ class OutlookBackend(Backend):
                 start=clean_date(v.get("Start")),
                 end=clean_date(v.get("End")),
                 recurring=bool(v.get("IsRecurring") or False),
+                size=_int(v.get("Size")),
             )
             if not item.entry_id:
                 continue
@@ -230,7 +240,6 @@ class OutlookBackend(Backend):
     # --------------------------------------------------------------- PST
     def pst_begin(self, path: str, display_name: str) -> str:
         self._pst_folders.clear()
-        self._pst_expected.clear()
         try:
             self.ns.AddStoreEx(path, OL_STORE_UNICODE)
         except pywintypes.com_error as e:
@@ -284,11 +293,9 @@ class OutlookBackend(Backend):
 
     def pst_copy(self, handle, item: ItemInfo, include_store: bool) -> None:
         dest = self._pst_folder(item, include_store)
-        path = self._pst_path(item, include_store)
         if item.kind == "appointment":
             try:
                 handle.CopyTo(dest, OL_CREATE_APPOINTMENT)  # keeps the subject without "Copy:"
-                self._pst_expected[path] = self._pst_expected.get(path, 0) + 1
                 return
             except (pywintypes.com_error, AttributeError):
                 pass
@@ -301,17 +308,42 @@ class OutlookBackend(Backend):
             except pywintypes.com_error:
                 pass
             raise
-        self._pst_expected[path] = self._pst_expected.get(path, 0) + 1
 
-    def pst_verify(self) -> str | None:
-        for path, expected in self._pst_expected.items():
-            try:
-                found = int(self._pst_folders[path].Items.Count)
-            except (pywintypes.com_error, KeyError) as e:
-                return _err(e)
-            if found < expected:
-                return self.t("v_missing", folder="/".join(path), found=found, expected=expected)
-        return None
+    def pst_inventory(self) -> list[ItemInfo]:
+        """Read back every item in the new PST, folder by folder."""
+        found: list[ItemInfo] = []
+
+        def walk(folder, parts: tuple) -> None:
+            table = folder.GetTable("", 0)
+            cols = table.Columns
+            cols.RemoveAll()
+            added = []
+            for name in TABLE_COLUMNS:
+                try:
+                    cols.Add(name)
+                    added.append(name)
+                except pywintypes.com_error:
+                    pass
+            while not table.EndOfTable:
+                row = table.GetNextRow()
+                if row is None:
+                    break
+                v = dict(zip(added, row.GetValues()))
+                found.append(ItemInfo(
+                    entry_id="", store_id="", folder_key="", folder_parts=parts, store_name="",
+                    message_class=str(v.get("MessageClass") or ""), subject=str(v.get("Subject") or ""),
+                    sender=str(v.get("SenderName") or v.get("Organizer") or ""),
+                    received=clean_date(v.get("ReceivedTime")), sent=clean_date(v.get("SentOn")),
+                    created=clean_date(v.get("CreationTime")), modified=clean_date(v.get("LastModificationTime")),
+                    start=clean_date(v.get("Start")), end=clean_date(v.get("End")), size=_int(v.get("Size")),
+                ))
+            subs = folder.Folders
+            for i in range(1, subs.Count + 1):
+                sub = subs.Item(i)
+                walk(sub, parts + (sub.Name,))
+
+        walk(self._pst_root, ())
+        return found
 
     def in_protected_folder(self, item: ItemInfo) -> bool:
         return item.folder_key in self._protected
@@ -440,6 +472,26 @@ class OutlookBackend(Backend):
             except OSError:
                 pass
             self._tmp = None
+
+
+def _int(value) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _size_of(obj) -> int | None:
+    """Size in bytes of a folder or a whole mailbox, as Outlook reports it."""
+    try:
+        value = obj.PropertyAccessor.GetProperty(PR_MESSAGE_SIZE_EXTENDED)
+        return max(0, int(value))
+    except (pywintypes.com_error, AttributeError, TypeError, ValueError):
+        return None
+
+
+def _total_size(nodes) -> int:
+    return sum((n.size or 0) + _total_size(n.children) for n in nodes)
 
 
 def _get(obj, attr: str, default=None):

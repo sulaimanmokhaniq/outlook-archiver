@@ -23,7 +23,7 @@ from urllib.parse import urlparse
 
 from . import __version__
 from .base import Backend, BackendError, Cancelled
-from .core import Criteria, ExportOptions, preview_row, summarize
+from .core import Criteria, ExportOptions, estimate_archive_size, free_space, preview_row, summarize
 from .i18n import LANGS, Translator
 from .storage import History, Settings, app_dir
 from .win_icon import WindowIcon
@@ -195,6 +195,42 @@ class Controller:
                 self.result_seq += 1
                 self.history_count = self.history.count()
         self.submit("archive", run)
+
+    def estimate(self, body: dict) -> dict:
+        """Space before and after, shown before the archive starts."""
+        t = self.t()
+        with self.lock:
+            scan = self.scan
+            tree = list(self.tree)
+        if not scan or scan["id"] != body.get("scan_id"):
+            raise ValueError(t("e_stale"))
+        opts = ExportOptions.from_dict(body.get("options") or {})
+        items = scan["items"]
+        backend = self.backend
+        archive = estimate_archive_size(items, opts)
+        free = free_space(opts.output_dir)
+        moving = opts.move_after and opts.make_pst
+
+        def removable(it) -> bool:
+            return it.removal_blocker() is None and not (backend and backend.in_protected_folder(it))
+
+        mailboxes = []
+        for node in tree:
+            mine = [it for it in items if it.store_name == node["name"]]
+            if not mine:
+                continue
+            mailboxes.append({
+                "name": node["name"], "size": node.get("size"),
+                "chosen": sum(it.size for it in mine),
+                "removed": sum(it.size for it in mine if removable(it)) if moving else 0,
+                "file_size": node.get("file_size"), "file_ext": node.get("file_ext", ""),
+            })
+        drive = os.path.splitdrive(os.path.abspath(opts.output_dir or "."))[0]
+        return {
+            "items_size": sum(it.size for it in items), "archive": archive, "free": free,
+            "enough": free is None or archive + 200 * 1024 * 1024 < free,
+            "move": moving, "drive": drive, "mailboxes": mailboxes,
+        }
 
     def forget_history(self) -> None:
         self.history.forget()
@@ -391,6 +427,8 @@ class _Handler(BaseHTTPRequestHandler):
                 if body.get("lang") not in (None, "", *LANGS):
                     body.pop("lang")
                 return self._json(200, c.settings.save(body))
+            elif path == "/api/estimate":
+                return self._json(200, c.estimate(body))
             elif path == "/api/forget":
                 c.forget_history()
             elif path == "/api/browse":

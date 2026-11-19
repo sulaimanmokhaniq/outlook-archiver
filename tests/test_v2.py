@@ -249,3 +249,77 @@ def test_icons_are_served(client):
 def test_window_icon_is_harmless_off_windows():
     from archiver.win_icon import WindowIcon
     assert WindowIcon("archiver/web/app.ico").apply() == 0
+
+
+def test_estimate_before_and_after(client, tmp_path):
+    _, tree = client.call("GET", "/api/tree")
+    assert tree["tree"][0]["size"] > 0
+    inbox = [n for n in tree["tree"][0]["children"] if n["name"] == "Inbox"][0]
+    client.call("POST", "/api/count", {"folders": [inbox["key"]], "criteria": {"kinds": ["mail"],
+                "date_to": "2019-12-31"}, "skip_archived": False})
+    st = client.wait_idle()
+    scan_id = st["scan"]["id"]
+    assert st["scan"]["summary"]["size"] > 0
+    opts = {"output_dir": str(tmp_path), "archive_name": "x", "make_pst": True, "write_index": True}
+    _, copy_only = client.call("POST", "/api/estimate", {"scan_id": scan_id, "options": opts})
+    assert copy_only["archive"] >= copy_only["items_size"] and copy_only["free"] > 0
+    assert copy_only["mailboxes"][0]["removed"] == 0 and not copy_only["move"]
+    _, more = client.call("POST", "/api/estimate", {"scan_id": scan_id, "options": dict(opts, file_formats=["msg"])})
+    assert more["archive"] > copy_only["archive"]
+    _, moving = client.call("POST", "/api/estimate", {"scan_id": scan_id, "options": dict(opts, move_after=True)})
+    mb = moving["mailboxes"][0]
+    assert moving["move"] and 0 < mb["removed"] <= mb["chosen"] <= mb["size"]
+    client.call("POST", "/api/archive", {"scan_id": scan_id, "options": dict(opts, move_after=True)})
+    st = client.wait_idle()
+    r = st["result"]
+    assert r["removed_size"] == mb["removed"] and r["archive_size"] > 0
+
+
+def test_check_confirms_every_item(tmp_path):
+    b = DemoBackend()
+    keys = _all_keys(b)
+    items = b.scan(keys, Criteria(kinds={"mail", "appointment", "contact"}, date_to=dt.date(2018, 12, 31)),
+                   _noop, lambda: False)
+    opts = ExportOptions(output_dir=str(tmp_path), archive_name="Check", file_formats={"txt"})
+    res = b.export(items, opts, _noop, lambda: False)
+    c = res.check
+    assert c["ok"] and c["missing_count"] == 0
+    assert c["pst"]["found"] == c["pst"]["expected"] == len(items)
+    assert c["pst"]["found_size"] == c["pst"]["expected_size"] == sum(it.size for it in items)
+    assert c["files"]["found"] == c["files"]["expected"] == len(items)
+    assert res.total == len(items)
+    with open(os.path.join(res.folder, "Archive list.csv"), encoding="utf-8-sig") as f:
+        rows = list(csv.reader(f))
+    assert rows[0][9] == "Check" and all(r[9] == "OK" for r in rows[1:])
+
+
+def test_check_catches_missing_items_and_blocks_removal(tmp_path, monkeypatch):
+    monkeypatch.setenv("OUTLOOK_ARCHIVER_DEMO_LOSE", "3")
+    b = DemoBackend()
+    keys = _all_keys(b)
+    crit = Criteria(kinds={"mail"}, date_to=dt.date(2018, 6, 30))
+    items = b.scan(keys, crit, _noop, lambda: False)
+    opts = ExportOptions(output_dir=str(tmp_path), archive_name="Lost", move_after=True)
+    res = b.export(items, opts, _noop, lambda: False)
+    c = res.check
+    assert not c["ok"] and c["missing_count"] == 3 and len(c["missing"]) == 3
+    assert c["pst"]["found"] == len(items) - 3
+    assert res.removed == 0  # nothing removed when anything is missing
+    assert res.total == len(items) - 3
+    assert b.scan(keys, crit, _noop, lambda: False) == items  # mailbox untouched
+    with open(os.path.join(res.folder, "README.txt"), encoding="utf-8-sig") as f:
+        readme = f.read()
+    assert "3 item(s) are missing" in readme and "Not found in the PST" in readme
+
+
+def test_check_counts_stopped_items(tmp_path):
+    b = DemoBackend()
+    items = b.scan(_all_keys(b), Criteria(kinds={"mail"}), _noop, lambda: False)[:50]
+    calls = {"n": 0}
+
+    def stop_after_10():
+        calls["n"] += 1
+        return calls["n"] > 10
+
+    res = b.export(items, ExportOptions(output_dir=str(tmp_path), archive_name="S"), _noop, stop_after_10)
+    assert res.cancelled and res.check["ok_items"] == 10 and res.check["missing_count"] == 40

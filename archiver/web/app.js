@@ -112,6 +112,38 @@ const STR = {
     count_none: "Click “Count items” to see how many items match, before anything is copied.",
     count_res: "{n} items match",
     count_one: "1 item matches",
+    count_size: "{s} in total",
+    col_size: "Size",
+    pv_total: "Total size: {s}",
+    space_title: "Space - now and after archiving",
+    space_calc: "Calculating…",
+    sp_now: "Now",
+    sp_after: "After",
+    sp_items: "Chosen items",
+    sp_items_v: "{s} in Outlook",
+    sp_disk: "Free space on this laptop",
+    sp_disk_d: "Free space on drive {d}",
+    sp_archive: "The archive will take about {s} on the laptop.",
+    sp_mailbox: "Mailbox “{n}”",
+    sp_nochange: "no change - copies only",
+    sp_after_empty: "once Deleted Items is emptied",
+    sp_file: "Outlook’s file on this laptop ({ext})",
+    sp_file_shrink: "gets smaller after “Compact Now”",
+    sp_unknown: "unknown",
+    sp_not_enough: "Not enough free space: the archive needs about {need}, but only {free} is free. Choose another folder or drive, or save fewer kinds of files.",
+    approx: "about {s}",
+    done_size: "archive size",
+    done_title_bad: "Finished - but some items are missing",
+    chk_title: "Check: is everything in the archive?",
+    chk_items: "Items: {a} chosen · {b} confirmed in the archive",
+    chk_pst: "In the PST: {a} of {b} found · size {s1} in Outlook, {s2} in the PST",
+    chk_files: "Files: {a} of {b} saved and readable",
+    chk_all_ok: "Every chosen item is in the archive - nothing is missing.",
+    chk_bad: "{n} item(s) are missing or incomplete. They are listed below, in the README and in the Excel list (column “Check”).",
+    chk_show: "Show the missing items ({n})",
+    chk_size_note: "Small size differences are normal: a PST stores items in its own way.",
+    sp_items_n: "{n} items",
+    done_freed: "freed from mailbox",
     conf_one: "1 item",
     count_skipped: "{n} already archived, skipped",
     count_stale: "You changed your choices - count again.",
@@ -280,6 +312,38 @@ const STR = {
     count_none: "اضغط «عدّ العناصر» لترى عدد العناصر المطابقة قبل نسخ أي شيء.",
     count_res: "{n} عنصرًا مطابقًا",
     count_one: "عنصر واحد مطابق",
+    count_size: "الحجم الكلي {s}",
+    col_size: "الحجم",
+    pv_total: "الحجم الكلي: {s}",
+    space_title: "المساحة - الآن وبعد الأرشفة",
+    space_calc: "جارٍ الحساب…",
+    sp_now: "الآن",
+    sp_after: "بعد",
+    sp_items: "العناصر المختارة",
+    sp_items_v: "{s} في Outlook",
+    sp_disk: "المساحة الفارغة على هذا الجهاز",
+    sp_disk_d: "المساحة الفارغة على القرص {d}",
+    sp_archive: "سيأخذ الأرشيف حوالي {s} على الجهاز.",
+    sp_mailbox: "صندوق البريد «{n}»",
+    sp_nochange: "بدون تغيير - نسخ فقط",
+    sp_after_empty: "بعد إفراغ «العناصر المحذوفة»",
+    sp_file: "ملف Outlook على هذا الجهاز ({ext})",
+    sp_file_shrink: "يصغر بعد «ضغط الآن»",
+    sp_unknown: "غير معروف",
+    sp_not_enough: "لا توجد مساحة كافية: يحتاج الأرشيف حوالي {need}، والمتاح {free} فقط. اختر مجلدًا أو قرصًا آخر، أو قلّل أنواع الملفات المحفوظة.",
+    approx: "حوالي {s}",
+    done_size: "حجم الأرشيف",
+    done_title_bad: "انتهى - لكن بعض العناصر ناقصة",
+    chk_title: "الفحص: هل كل شيء موجود في الأرشيف؟",
+    chk_items: "العناصر: {a} مختارة · {b} مؤكدة في الأرشيف",
+    chk_pst: "في ملف PST: تم العثور على {a} من {b} · الحجم {s1} في Outlook و{s2} في PST",
+    chk_files: "الملفات: {a} من {b} محفوظة وسليمة",
+    chk_all_ok: "كل العناصر المختارة موجودة في الأرشيف - لا يوجد أي نقص.",
+    chk_bad: "{n} عنصرًا ناقصًا أو غير مكتمل. تجدها أدناه وفي ملف اقرأني وفي قائمة Excel (عمود «الفحص»).",
+    chk_show: "اعرض العناصر الناقصة ({n})",
+    chk_size_note: "الفروق الصغيرة في الحجم طبيعية: ملف PST يخزّن العناصر بطريقته.",
+    sp_items_n: "{n} عنصرًا",
+    done_freed: "تم توفيره من صندوق البريد",
     conf_one: "عنصر واحد",
     count_skipped: "{n} سبقت أرشفتها وتم تخطيها",
     count_stale: "غيّرت اختياراتك - اضغط «عدّ العناصر» مرة أخرى.",
@@ -361,6 +425,16 @@ function el(tag, attrs, ...kids) {
   }
   for (const kid of kids) if (kid != null) e.append(kid);
   return e;
+}
+function fmtSize(bytes) {
+  if (bytes == null) return t("sp_unknown");
+  const b = Math.max(0, Number(bytes));
+  let v, u;
+  if (b >= 1024 ** 3) { v = b / 1024 ** 3; u = "GB"; }
+  else if (b >= 1024 ** 2) { v = b / 1024 ** 2; u = "MB"; }
+  else { v = Math.max(b / 1024, b ? 1 : 0); u = "KB"; }
+  const n = v >= 100 ? Math.round(v).toString() : v.toFixed(1).replace(/\.0$/, "");
+  return "\u2066" + n + " " + u + "\u2069"; // stays readable inside Arabic text
 }
 function fmtTime(sec) {
   sec = Math.max(0, Math.round(sec));
@@ -449,11 +523,11 @@ function renderTree() {
     const row = el("div", {
       class: "node-row" + (node.is_store ? " store" : ""), role: "treeitem", tabindex: "0",
       "aria-checked": state === "on" ? "true" : state === "some" ? "mixed" : "false",
-      title: node.label,
+      title: node.size != null ? `${node.label} · ${fmtSize(node.size).replace(/[\u2066\u2069]/g, "")}` : node.label,
       onclick: () => toggleNode(node),
       onkeydown: (e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); toggleNode(node); } },
     }, caret, box2, el("span", { class: "name", text: node.name }),
-      node.is_store ? null : el("span", { class: "count", text: fmtN(node.count) }));
+      el("span", { class: "count", text: node.is_store ? (node.size != null ? fmtSize(node.size) : "") : fmtN(node.count) }));
     parent.append(row);
     if (node.children.length && open) {
       const kids = el("div", { class: "children", role: "group" });
@@ -728,6 +802,7 @@ function updateSummary() {
   if (S.scanInfo && S.countedKey === key) {
     const total = S.scanInfo.summary.total;
     cl.append(el("strong", { text: total === 1 ? t("count_one") : t("count_res", { n: fmtN(total) }) }));
+    if (total) cl.append("  ·  " + t("count_size", { s: fmtSize(S.scanInfo.summary.size) }));
     if (S.scanInfo.skipped) cl.append("  ·  " + t("count_skipped", { n: fmtN(S.scanInfo.skipped) }));
     if (S.scanInfo.summary.total) cl.append("  ·  ", el("button", { type: "button", class: "link small", text: t("show_list"), onclick: openPreview }));
   } else if (S.scanInfo) {
@@ -846,8 +921,58 @@ function openConfirm() {
   $("conf-move-ok").checked = false;
   const start = $("conf-start");
   start.classList.toggle("danger", o.move_after);
-  start.disabled = o.move_after;
+  S.spaceOk = false;
+  updateStart();
+  const space = $("conf-space");
+  space.textContent = "";
+  space.append(el("h4", { text: t("space_title") }), el("p", { class: "hint", text: t("space_calc") }));
   $("dlg-confirm").showModal();
+  loadSpace(o);
+}
+function updateStart() {
+  const moveOk = !exportOptions().move_after || $("conf-move-ok").checked;
+  $("conf-start").disabled = !(S.spaceOk && moveOk);
+}
+async function loadSpace(o) {
+  const space = $("conf-space");
+  let e;
+  try {
+    e = await api("estimate", { scan_id: S.scanId, options: o });
+  } catch (err) {
+    space.lastChild.textContent = err.message;
+    S.spaceOk = true; // the numbers are a guide; do not block on them
+    updateStart();
+    return;
+  }
+  space.textContent = "";
+  space.append(el("h4", { text: t("space_title") }));
+  const table = el("div", { class: "space-grid" });
+  const head = (a, b, c) => table.append(el("span", { class: "sh", text: a }), el("span", { class: "sh", text: b }), el("span", { class: "sh", text: c }));
+  const row = (label, now, after, note, cls) => {
+    table.append(el("span", { class: "sl" }, label, note ? el("small", { text: note }) : null),
+      el("span", { class: "sv", text: now }), el("span", { class: "sv " + (cls || ""), text: after }));
+  };
+  head("", t("sp_now"), t("sp_after"));
+  row(t("sp_items"), fmtSize(e.items_size), "", t("sp_items_n", { n: fmtN(S.scanInfo.summary.total) }), "muted");
+  const freeAfter = e.free == null ? null : e.free - e.archive;
+  row(e.drive ? t("sp_disk_d", { d: e.drive }) : t("sp_disk"), fmtSize(e.free),
+    e.free == null ? "" : t("approx", { s: fmtSize(Math.max(0, freeAfter)) }),
+    t("sp_archive", { s: fmtSize(e.archive) }), e.enough ? "" : "bad");
+  e.mailboxes.forEach((m) => {
+    const after = e.move && m.size != null ? t("approx", { s: fmtSize(Math.max(0, m.size - m.removed)) }) : e.move ? "" : t("sp_nochange");
+    row(t("sp_mailbox", { n: m.name }), fmtSize(m.size), after,
+      t("sp_items_v", { s: fmtSize(m.chosen) }) + (e.move ? " · " + t("sp_after_empty") : ""), e.move ? "good" : "muted");
+    if (m.file_size != null) {
+      row(t("sp_file", { ext: m.file_ext || ".ost" }), fmtSize(m.file_size),
+        e.move ? t("sp_file_shrink") : t("sp_nochange"), "", "muted");
+    }
+  });
+  space.append(table);
+  if (!e.enough) {
+    space.append(el("p", { class: "callout danger", text: t("sp_not_enough", { need: fmtSize(e.archive), free: fmtSize(e.free) }) }));
+  }
+  S.spaceOk = e.enough;
+  updateStart();
 }
 async function startArchive() {
   $("dlg-confirm").close();
@@ -893,15 +1018,20 @@ function showDone(r) {
   $("o-move").checked = false; // ask again each time, on purpose
   updateMoveTile();
   const removedAsked = r.removed > 0 || r.kept > 0;
-  $("done-title").textContent = r.cancelled ? t("done_stopped") : t("done_title");
-  $("done-icon").textContent = r.cancelled ? "!" : "✓";
-  $("done-icon").className = "done-icon" + (r.cancelled ? " warn" : "");
+  const c = r.check || {};
+  const bad = r.cancelled || c.ok === false;
+  $("done-title").textContent = r.cancelled ? t("done_stopped") : c.ok === false ? t("done_title_bad") : t("done_title");
+  $("done-icon").textContent = bad ? "!" : "✓";
+  $("done-icon").className = "done-icon" + (bad ? " warn" : "");
+  renderCheck(c);
   const tiles = $("done-tiles");
   tiles.textContent = "";
-  const stat = (n, label, bad) => tiles.append(el("div", { class: "stat" + (bad ? " bad" : "") }, el("b", { text: fmtN(n) }), el("span", { text: label })));
+  const stat = (n, label, bad, text) => tiles.append(el("div", { class: "stat" + (bad ? " bad" : "") }, el("b", { text: text || fmtN(n) }), el("span", { text: label })));
   stat(r.total, t("done_items"));
   if (r.files_written) stat(r.files_written, t("done_files"));
+  stat(0, t("done_size"), false, fmtSize(r.archive_size));
   if (removedAsked) stat(r.removed, t("done_removed"));
+  if (r.removed_size) stat(0, t("done_freed"), false, fmtSize(r.removed_size));
   if (r.kept) stat(r.kept, t("done_kept"));
   if (r.errors.length) stat(r.errors.length, t("done_problems"), true);
   $("done-folder").textContent = r.folder;
@@ -913,6 +1043,32 @@ function showDone(r) {
   list.textContent = "";
   r.errors.slice(0, 300).forEach((e) => list.append(el("li", { text: e })));
   $("dlg-done").showModal();
+}
+function renderCheck(c) {
+  const box = $("done-check");
+  box.textContent = "";
+  if (!c || c.chosen == null) { box.hidden = true; return; }
+  box.hidden = false;
+  box.className = "check " + (c.ok ? "good" : "bad");
+  box.append(el("h4", { text: t("chk_title") }));
+  const line = (ok, text) => box.append(el("div", { class: "check-line" },
+    el("span", { class: "mark " + (ok ? "ok" : "no"), text: ok ? "✓" : "✗" }), el("span", { text })));
+  line(c.ok_items === c.chosen, t("chk_items", { a: fmtN(c.chosen), b: fmtN(c.ok_items) }));
+  if (c.pst) {
+    line(c.pst.checked && c.pst.found === c.pst.expected, t("chk_pst", {
+      a: fmtN(c.pst.found), b: fmtN(c.pst.expected), s1: fmtSize(c.pst.expected_size), s2: fmtSize(c.pst.found_size) }));
+  }
+  if (c.files) line(c.files.found >= c.files.expected, t("chk_files", { a: fmtN(c.files.found), b: fmtN(c.files.expected) }));
+  box.append(el("p", { class: "check-result", text: c.ok ? t("chk_all_ok") : t("chk_bad", { n: fmtN(c.missing_count) }) }));
+  if (c.pst && c.pst.found === c.pst.expected && c.pst.expected_size && Math.abs(c.pst.found_size - c.pst.expected_size) > 0.02 * c.pst.expected_size) {
+    box.append(el("p", { class: "hint", text: t("chk_size_note") }));
+  }
+  if (c.missing && c.missing.length) {
+    const list = el("ul");
+    c.missing.slice(0, 200).forEach((m) => list.append(el("li", {},
+      el("bdi", { dir: "ltr", text: m.date }), "  ", el("b", { text: m.subject || t("no_subject") }), "  · " + m.reason)));
+    box.append(el("details", {}, el("summary", { text: t("chk_show", { n: fmtN(c.missing_count) }) }), list));
+  }
 }
 async function openPreview() {
   const data = await api("scan");
@@ -934,7 +1090,9 @@ async function openPreview() {
   body.textContent = "";
   data.rows.forEach((r) => body.append(el("tr", {},
     el("td", { dir: "ltr", text: r.date }), el("td", { text: t("kind_" + r.kind) }), el("td", { text: r.from }),
-    el("td", { class: "subject", text: r.subject || t("no_subject") }), el("td", { class: "folder", text: r.folder }))));
+    el("td", { class: "subject", text: r.subject || t("no_subject") }), el("td", { class: "num", text: fmtSize(r.size) }),
+    el("td", { class: "folder", text: r.folder }))));
+  $("pv-total").textContent = t("pv_total", { s: fmtSize(info.summary.size) });
   $("pv-more").textContent = data.more ? t("pv_more", { shown: fmtN(data.rows.length), total: fmtN(info.summary.total) }) : "";
   $("dlg-preview").showModal();
 }
@@ -1046,7 +1204,7 @@ function wire() {
   $("btn-archive").onclick = onArchiveClick;
   $("conf-cancel").onclick = () => $("dlg-confirm").close();
   $("conf-start").onclick = startArchive;
-  $("conf-move-ok").onchange = () => ($("conf-start").disabled = !$("conf-move-ok").checked);
+  $("conf-move-ok").onchange = updateStart;
   $("prog-stop").onclick = () => { $("prog-stop").disabled = true; $("prog-stop").textContent = t("stopping"); api("stop", {}).catch(() => {}); };
   $("done-close").onclick = () => $("dlg-done").close();
   $("done-open").onclick = () => S.lastResult && api("open", { path: S.lastResult.folder }).catch((e) => message(e.message));

@@ -5,6 +5,7 @@ so in demo mode those are written as small text placeholders.
 """
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import os
 import random
@@ -69,7 +70,9 @@ class DemoBackend(Backend):
                     recurring=mclass == "IPM.Appointment" and n % 10 == 0,
                 )
                 body = f"Hello,\n\nThis is about {topic}.\n\nRegards,\n{info.sender}"
-                items.append((info, body, rnd.choice([0, 0, 0, 1, 2])))
+                atts = rnd.choice([0, 0, 0, 1, 2])
+                info.size = rnd.randint(12_000, 120_000) + sum(rnd.randint(150_000, 2_500_000) for _ in range(atts))
+                items.append((info, body, atts))
             self._items[key] = items
 
     def connect(self) -> str:
@@ -81,10 +84,12 @@ class DemoBackend(Backend):
         for idx, (parts, _, _) in enumerate(DEMO_FOLDERS):
             key = f"f{idx}"
             node = FolderNode(key=key, name=parts[-1], label="/".join((self.store,) + parts),
-                              count=len(self._items[key]))
+                              count=len(self._items[key]),
+                              size=sum(e[0].size for e in self._items[key]))
             by_parts[parts] = node
             parent = by_parts.get(parts[:-1]) if len(parts) > 1 else None
             (parent.children if parent else root.children).append(node)
+        root.size = sum(e[0].size for entries in self._items.values() for e in entries)
         return [root]
 
     def folder_label(self, key: str) -> str:
@@ -115,6 +120,7 @@ class DemoBackend(Backend):
     def pst_begin(self, path: str, display_name: str) -> str:
         path += ".demo.txt"
         self._copied = 0
+        self._in_pst: list[ItemInfo] = []
         self._pst_log = open(path, "w", encoding="utf-8")
         self._pst_log.write("Demo mode: a real PST file is created only when the program runs with Outlook.\n")
         return path
@@ -123,9 +129,16 @@ class DemoBackend(Backend):
         time.sleep(float(os.environ.get("OUTLOOK_ARCHIVER_DEMO_DELAY") or 0))  # to watch the progress screen
         self._pst_log.write(f"{item.folder_path}\t{item.subject}\n")
         self._copied += 1
+        copy = dataclasses.replace(item, entry_id=f"pst-{self._copied}", store_name="")
+        self._in_pst.append(copy)
 
-    def pst_verify(self) -> str | None:
-        return None
+    def placeholder_size(self) -> int:
+        return int(sum(it.size for it in getattr(self, "_in_pst", [])) * 1.15)
+
+    def pst_inventory(self) -> list[ItemInfo]:
+        # OUTLOOK_ARCHIVER_DEMO_LOSE=N pretends N copies went missing, to test the check
+        lose = int(os.environ.get("OUTLOOK_ARCHIVER_DEMO_LOSE") or 0)
+        return self._in_pst[lose:]
 
     def pst_end(self, keep_open: bool) -> None:
         self._pst_log.close()
