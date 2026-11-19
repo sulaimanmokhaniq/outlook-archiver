@@ -247,7 +247,8 @@ MAX_PATH = 250
 
 
 def safe_name(text: str | None, max_len: int = 80, fallback: str = "(no subject)") -> str:
-    s = _BAD_CHARS.sub("_", text or "")
+    s = (text or "").replace(":", " -").replace("/", "-").replace("\\", "-")  # "RE: x" -> "RE - x"
+    s = _BAD_CHARS.sub("_", s)
     s = re.sub(r"\s+", " ", s).strip().rstrip(". ")
     if len(s) > max_len:
         s = s[:max_len].rstrip(". ")

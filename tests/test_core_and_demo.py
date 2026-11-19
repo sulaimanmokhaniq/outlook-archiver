@@ -101,7 +101,7 @@ def test_parse_date_formats():
 
 
 def test_safe_names():
-    assert safe_name('RE: a/b "c"?') == "RE_ a_b _c__"
+    assert safe_name('RE: a/b "c"?') == 'RE - a-b _c__'
     assert safe_name("") == "(no subject)"
     assert safe_name("con") == "_con"
     assert len(safe_name("x" * 500)) == 80
@@ -109,7 +109,7 @@ def test_safe_names():
 
 def test_layouts_and_stem():
     it = item(folder_parts=("Inbox", "A/B"))
-    assert relative_dir(it, "folder_year", False) == ["Inbox", "A_B", "2021"]
+    assert relative_dir(it, "folder_year", False) == ["Inbox", "A-B", "2021"]
     assert relative_dir(it, "folder_year", True)[0] == "Me"
     assert relative_dir(it, "type_year", False) == ["Emails", "2021"]
     assert relative_dir(it, "year_month", False) == ["2021", "05"]

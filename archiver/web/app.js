@@ -111,6 +111,8 @@ const STR = {
     archive_btn: "Start archiving",
     count_none: "Click “Count items” to see how many items match, before anything is copied.",
     count_res: "{n} items match",
+    count_one: "1 item matches",
+    conf_one: "1 item",
     count_skipped: "{n} already archived, skipped",
     count_stale: "You changed your choices - count again.",
     show_list: "Show the list",
@@ -277,6 +279,8 @@ const STR = {
     archive_btn: "ابدأ الأرشفة",
     count_none: "اضغط «عدّ العناصر» لترى عدد العناصر المطابقة قبل نسخ أي شيء.",
     count_res: "{n} عنصرًا مطابقًا",
+    count_one: "عنصر واحد مطابق",
+    conf_one: "عنصر واحد",
     count_skipped: "{n} سبقت أرشفتها وتم تخطيها",
     count_stale: "غيّرت اختياراتك - اضغط «عدّ العناصر» مرة أخرى.",
     show_list: "اعرض القائمة",
@@ -400,7 +404,7 @@ const S = {
   server: null, tree: [], treeVersion: -1, checked: new Set(), expanded: new Set(),
   foldersFromSettings: null, seq: { error: 0, result: 0, stopped: 0 },
   scanId: null, scanInfo: null, countedKey: null, pendingKey: null, pendingArchive: false,
-  wasBusy: false, jobKind: null, nameTouched: false, lastResult: null, historyCount: 0, ready: false,
+  wasBusy: false, jobKind: null, nameTouched: false, singleName: null, lastResult: null, historyCount: 0, ready: false,
 };
 
 // ---------------------------------------------------------- folder tree
@@ -592,6 +596,11 @@ function renderFilterBadge() {
 }
 function autoName() {
   if (S.nameTouched) return;
+  // one email chosen: the archive is named after it
+  if (S.singleName && S.scanInfo && S.countedKey === JSON.stringify(countRequest())) {
+    $("o-name").value = S.singleName;
+    return;
+  }
   const [a, b] = periodRange();
   let suffix;
   if (a && b && a.slice(0, 4) === b.slice(0, 4) && a.endsWith("-01-01") && b.endsWith("-12-31")) suffix = a.slice(0, 4);
@@ -717,7 +726,8 @@ function updateSummary() {
   cl.className = "count-line";
   const key = JSON.stringify(countRequest());
   if (S.scanInfo && S.countedKey === key) {
-    cl.append(el("strong", { text: t("count_res", { n: fmtN(S.scanInfo.summary.total) }) }));
+    const total = S.scanInfo.summary.total;
+    cl.append(el("strong", { text: total === 1 ? t("count_one") : t("count_res", { n: fmtN(total) }) }));
     if (S.scanInfo.skipped) cl.append("  ·  " + t("count_skipped", { n: fmtN(S.scanInfo.skipped) }));
     if (S.scanInfo.summary.total) cl.append("  ·  ", el("button", { type: "button", class: "link small", text: t("show_list"), onclick: openPreview }));
   } else if (S.scanInfo) {
@@ -808,7 +818,7 @@ function onArchiveClick() {
 function openConfirm() {
   const o = exportOptions();
   const info = S.scanInfo;
-  $("conf-number").textContent = t("conf_items", { n: fmtN(info.summary.total) });
+  $("conf-number").textContent = info.summary.total === 1 ? t("conf_one") : t("conf_items", { n: fmtN(info.summary.total) });
   const facts = $("conf-facts");
   facts.textContent = "";
   const what = [];
@@ -929,6 +939,18 @@ async function openPreview() {
   $("dlg-preview").showModal();
 }
 
+async function nameFromScan(scan) {
+  S.singleName = null;
+  if (scan.summary.total === 1) {
+    try {
+      const row = (await api("scan")).rows[0] || {};
+      const subject = (row.subject || "").replace(/\s+/g, " ").trim();
+      S.singleName = (subject || `${t("no_subject")} ${(row.date || "").slice(0, 10)}`.trim()).slice(0, 80).trim();
+    } catch (e) { /* keep the usual name */ }
+  }
+  autoName();
+}
+
 // ----------------------------------------------------------------- polling
 let pollTimer = null;
 async function poll() {
@@ -960,6 +982,7 @@ async function onState(st) {
     S.scanInfo = st.scan;
     if (st.scan) {
       S.countedKey = S.pendingKey;
+      await nameFromScan(st.scan);
       if (S.pendingArchive) {
         S.pendingArchive = false;
         if (!st.scan.summary.total) message(t("nothing_match")); else openConfirm();
