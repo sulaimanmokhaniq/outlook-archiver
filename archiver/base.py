@@ -82,8 +82,17 @@ class Backend:
         """Whether this data source may remove this kind of item (after archiving)."""
         return True
 
+    background = False  # classic Outlook running hidden next to the new Outlook
+
     def sign_out(self) -> None:
         """Forget a saved sign-in (online mode only)."""
+
+    def connect_note(self) -> str | None:
+        """Something to tell the person while connecting (or None)."""
+        return None
+
+    def close(self) -> None:
+        """Called when the program closes."""
 
     def __init__(self) -> None:
         self.t = Translator()

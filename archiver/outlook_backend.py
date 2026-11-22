@@ -13,6 +13,7 @@ import pythoncom
 import pywintypes
 import win32com.client
 
+from . import outlook_setup
 from .base import Backend, BackendError, Cancelled, FolderNode, IsCancelled, Progress
 from .core import Criteria, ItemInfo, PathAllocator, clean_date, matches_deep, matches_quick, safe_name
 
@@ -56,6 +57,8 @@ class OutlookBackend(Backend):
         super().__init__()
         self.app = None
         self.ns = None
+        self.started_by_us = False
+        self.background = False  # True when the person uses the new Outlook
         # key -> (entry_id, store_id, store_name, folder_parts, default_item_type)
         self._folders: dict[str, tuple[str, str, str, tuple[str, ...], int]] = {}
         self._pst_root = None
@@ -66,15 +69,55 @@ class OutlookBackend(Backend):
         self._tmp = None
 
     # ------------------------------------------------------------ connect
+    def connect_note(self) -> str | None:
+        """Shown while connecting, before classic Outlook answers."""
+        st = outlook_setup.status()
+        if st["has_profile"] is False:
+            return self.t("p_classic_first_time")
+        if st["new_outlook_on"]:
+            return self.t("p_classic_hidden")
+        return None
+
     def connect(self) -> str:
         pythoncom.CoInitialize()
-        try:
-            self.app = win32com.client.Dispatch("Outlook.Application")
+        st = outlook_setup.status()
+        self.background = bool(st["new_outlook_on"])
+
+        def start() -> int:
+            try:  # already open? then use it and leave it open afterwards
+                self.app = win32com.client.GetActiveObject("Outlook.Application")
+                self.started_by_us = False
+            except pywintypes.com_error:
+                self.app = win32com.client.Dispatch("Outlook.Application")  # starts hidden
+                self.started_by_us = True
             self.ns = self.app.GetNamespace("MAPI")
-            count = self.ns.Stores.Count
-        except pywintypes.com_error as e:
-            raise BackendError(self.t("e_no_outlook") + f"\n\n({_err(e)})") from e
-        return self.t("connected", n=count)
+            return self.ns.Stores.Count
+
+        try:
+            count = start()
+        except pywintypes.com_error as first:
+            if not st["new_outlook_on"]:
+                raise BackendError(self.t("e_no_outlook") + f"\n\n({_err(first)})") from first
+            # The "New Outlook" switch may have sent the start to the new app: turn it off
+            # for the moment classic Outlook needs to start, then put it back.
+            try:
+                with outlook_setup.classic_can_start():
+                    count = start()
+            except (pywintypes.com_error, OSError) as e:
+                raise BackendError(self.t("e_no_outlook") + f"\n\n({_err(e)})") from e
+        return self.t("connected_hidden" if self.background else "connected", n=count)
+
+    def close(self) -> None:
+        """Close the hidden classic Outlook again, if this program started it."""
+        if not self.started_by_us or self.app is None:
+            return
+        try:
+            if self.app.Explorers.Count == 0 and self.app.Inspectors.Count == 0:
+                self.app.Quit()
+        except pywintypes.com_error:
+            pass
+        self.app = self.ns = None
+        self.started_by_us = False
 
     # -------------------------------------------------------- folder tree
     def list_tree(self) -> list[FolderNode]:

@@ -15,12 +15,14 @@ const STR = {
     conn_demo: "Demo · made-up mailbox",
     conn_bad: "Outlook not connected",
     conn_online: "Microsoft 365 online · {who}",
+    conn_bg: "Classic Outlook in the background · {n} mailbox(es)",
+    bg_note: "You are using the new Outlook - no need to switch. This program runs classic Outlook hidden in the background to read the mailbox and make PST files, and closes it again when you close the program.",
     conn_title: "Connection",
     conn_intro: "Choose how the program reaches the mailbox. Your choice is remembered.",
     eng_classic: "Classic Outlook on this laptop",
-    eng_classic_d: "Reads from classic Outlook (the one with a File menu). Can make PST files that open in Outlook.",
+    eng_classic_d: "Makes PST files. Works even if you use the new Outlook: classic Outlook runs hidden in the background, so you do not need to switch. Needs classic Outlook installed (it comes with the Microsoft 365 desktop apps).",
     eng_online: "Microsoft 365 online - works with the new Outlook",
-    eng_online_d: "Reads the mailbox straight from Microsoft 365 after you sign in with your work account, whichever Outlook you use. Saves the original emails (.eml), calendar (.ics) and contacts (.vcf). It cannot make PST files.",
+    eng_online_d: "For laptops without classic Outlook. Reads the mailbox straight from Microsoft 365 after you sign in with your work account. Saves the original emails (.eml), calendar (.ics) and contacts (.vcf). It cannot make PST files.",
     eng_in_use: "in use",
     eng_unavailable: "not available on this computer",
     use_classic: "Use classic Outlook",
@@ -234,12 +236,14 @@ const STR = {
     conn_demo: "تجربة · صندوق بريد وهمي",
     conn_bad: "Outlook غير متصل",
     conn_online: "Microsoft 365 عبر الإنترنت · {who}",
+    conn_bg: "Outlook الكلاسيكي في الخلفية · {n} صندوق بريد",
+    bg_note: "أنت تستخدم Outlook الجديد - لا حاجة للتبديل. يشغّل البرنامج Outlook الكلاسيكي مخفيًا في الخلفية لقراءة البريد وإنشاء ملفات PST، ويغلقه عند إغلاق البرنامج.",
     conn_title: "الاتصال",
     conn_intro: "اختر طريقة وصول البرنامج إلى صندوق البريد. سيتم تذكّر اختيارك.",
     eng_classic: "Outlook الكلاسيكي على هذا الجهاز",
-    eng_classic_d: "يقرأ من Outlook الكلاسيكي (الذي فيه قائمة «ملف»). يمكنه إنشاء ملفات PST تُفتح في Outlook.",
+    eng_classic_d: "ينشئ ملفات PST. يعمل حتى لو كنت تستخدم Outlook الجديد: يعمل Outlook الكلاسيكي مخفيًا في الخلفية فلا تحتاج إلى التبديل. يتطلب أن يكون Outlook الكلاسيكي مثبتًا (يأتي مع تطبيقات Microsoft 365 لسطح المكتب).",
     eng_online: "Microsoft 365 عبر الإنترنت - يعمل مع Outlook الجديد",
-    eng_online_d: "يقرأ صندوق البريد مباشرة من Microsoft 365 بعد تسجيل الدخول بحساب العمل، أيًّا كان Outlook الذي تستخدمه. يحفظ الرسائل الأصلية (.eml) والتقويم (.ics) وجهات الاتصال (.vcf). لا يمكنه إنشاء ملفات PST.",
+    eng_online_d: "للأجهزة التي ليس عليها Outlook الكلاسيكي. يقرأ صندوق البريد مباشرة من Microsoft 365 بعد تسجيل الدخول بحساب العمل. يحفظ الرسائل الأصلية (.eml) والتقويم (.ics) وجهات الاتصال (.vcf). لا يمكنه إنشاء ملفات PST.",
     eng_in_use: "مستخدم الآن",
     eng_unavailable: "غير متاح على هذا الجهاز",
     use_classic: "استخدم Outlook الكلاسيكي",
@@ -874,7 +878,7 @@ function updatePill() {
   if (st && st.connected) {
     cls = st.demo ? "demo" : "ok";
     text = st.engine === "online" ? t("conn_online", { who: st.account })
-      : st.demo ? t("conn_demo") : t("conn_ok", { n: st.store_count });
+      : st.demo ? t("conn_demo") : st.background ? t("conn_bg", { n: st.store_count }) : t("conn_ok", { n: st.store_count });
   } else if (st && !(st.busy && st.job && st.job.kind === "connect") && S.ready) {
     cls = "bad"; text = t("conn_bad");
   }
@@ -896,6 +900,7 @@ function message(text, withCancel = false) {
   });
 }
 function showBanner(text, retry) {
+  $("banner").classList.remove("info");
   $("banner-text").textContent = text;
   $("banner-retry").hidden = !retry;
   const st = S.server || {};
@@ -1254,6 +1259,14 @@ async function onState(st) {
   if (st.connected && !$("banner").hidden && !$("banner-retry").hidden) $("banner").hidden = true;
   if (!prev || prev.busy !== st.busy || prev.connected !== st.connected) { updatePill(); if (!S.tree.length) renderTree(); }
   if (!prev || prev.engine !== st.engine || prev.connected !== st.connected) { renderChips(); updateMoveTile(); }
+  if (st.background && !S.bgShown) {
+    S.bgShown = true;
+    $("banner-text").textContent = t("bg_note");
+    $("banner-retry").hidden = true;
+    $("banner-online").hidden = true;
+    $("banner").classList.add("info");
+    $("banner").hidden = false;
+  }
   updateSummary();
 }
 

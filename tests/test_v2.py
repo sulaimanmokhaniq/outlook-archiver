@@ -400,3 +400,88 @@ def test_classic_missing_offers_online(tmp_path):
         time.sleep(0.02)
     st = ctl.state()
     assert st["classic_failed"] and "Microsoft 365 online" in st["error"] and not st["connected"]
+
+
+# ------------------------------------- classic Outlook next to the new Outlook
+
+class FakeRegistry:
+    HKCU, HKLM = "HKCU", "HKLM"
+
+    def __init__(self, values=None, keys=(), subkeys=()):
+        self.values = dict(values or {})
+        self.keys, self.subkeys = set(keys), set(subkeys)
+        self.writes = []
+
+    def get_dword(self, root, path, name):
+        return self.values.get((root, path, name))
+
+    def set_dword(self, root, path, name, value):
+        self.writes.append(value)
+        self.values[(root, path, name)] = value
+
+    def key_exists(self, root, path):
+        return (root, path) in self.keys
+
+    def has_subkeys(self, root, path):
+        return (root, path) in self.subkeys
+
+
+def test_status_reads_the_new_outlook_switch():
+    from archiver import outlook_setup as o
+    reg = FakeRegistry({("HKCU", o.PREFS, o.SWITCH): 1}, keys={("HKLM", o.APP_PATH)},
+                       subkeys={("HKCU", o.PROFILES)})
+    assert o.status(reg) == {"classic_installed": True, "new_outlook_on": True, "has_profile": True}
+    assert o.status(FakeRegistry())["new_outlook_on"] is False
+
+
+def test_switch_is_put_back_even_if_starting_fails():
+    from archiver import outlook_setup as o
+    reg = FakeRegistry({("HKCU", o.PREFS, o.SWITCH): 1})
+    with pytest.raises(RuntimeError):
+        with o.classic_can_start(reg) as changed:
+            assert changed and reg.get_dword("HKCU", o.PREFS, o.SWITCH) == 0
+            raise RuntimeError("classic Outlook did not start")
+    assert reg.get_dword("HKCU", o.PREFS, o.SWITCH) == 1 and reg.writes == [0, 1]
+    off = FakeRegistry({("HKCU", o.PREFS, o.SWITCH): 0})
+    with o.classic_can_start(off) as changed:
+        assert not changed
+    assert off.writes == []  # nothing touched when the switch is already off
+
+
+def test_background_mode_is_reported_and_outlook_closed(tmp_path):
+    closed = []
+
+    class Background(DemoBackend):
+        def connect(self):
+            self.background = True
+            return "ok"
+
+        def close(self):
+            closed.append(True)
+
+    ctl = Controller(lambda: Background(), Settings(str(tmp_path / "s.json")), History(str(tmp_path / "h.sqlite3")))
+    ctl.connect()
+    for _ in range(100):
+        if not ctl.busy:
+            break
+        time.sleep(0.02)
+    st = ctl.state()
+    assert st["connected"] and st["background"] and st["capabilities"]["pst"]
+    ctl.shutdown(wait=5)
+    assert closed == [True]
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows registry")
+def test_switch_handling_on_the_real_windows_registry():
+    """Runs on the Windows build machine: set the switch, start, check it is put back."""
+    from archiver import outlook_setup as o
+    reg = o.Registry()
+    before = reg.get_dword(reg.HKCU, o.PREFS, o.SWITCH)
+    try:
+        reg.set_dword(reg.HKCU, o.PREFS, o.SWITCH, 1)
+        assert o.status(reg)["new_outlook_on"] is True
+        with o.classic_can_start(reg) as changed:
+            assert changed and reg.get_dword(reg.HKCU, o.PREFS, o.SWITCH) == 0
+        assert reg.get_dword(reg.HKCU, o.PREFS, o.SWITCH) == 1
+    finally:
+        reg.set_dword(reg.HKCU, o.PREFS, o.SWITCH, before if before is not None else 0)

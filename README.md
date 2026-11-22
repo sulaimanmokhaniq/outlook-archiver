@@ -65,13 +65,28 @@ This option exists to free up mailbox space. It is built to be safe:
 * If you click **Stop** during copying, nothing is removed.
 * The Excel list marks every item that was removed.
 
+## Works with the new Outlook - no need to switch
+
+If your boss uses the **new Outlook**, he can keep using it. The program starts **classic
+Outlook hidden in the background**, uses it to read the mailbox and to make **PST files**, and
+closes it again when the program is closed. The screen shows "Classic Outlook in the background".
+
+* Classic Outlook must be **installed** (it comes with the Microsoft 365 desktop apps and is
+  usually already on the laptop next to the new Outlook). This is not a limit of this program:
+  PST files can only be made with classic Outlook - even the new Outlook's own PST features need it.
+* The first time only, if classic Outlook was never set up on the laptop, it may show a window
+  asking to sign in with the work account. Finish it once; after that it stays hidden.
+* If the "New Outlook" switch stops classic Outlook from starting in the background, the program
+  turns the switch off for the few seconds classic Outlook needs to start, then puts it back
+  exactly as it was. Your boss keeps the new Outlook.
+
 ## Two ways to connect: classic Outlook or Microsoft 365 online
 
 Click the connection button at the top of the screen to choose. The program remembers the choice.
 
 | | Classic Outlook | Microsoft 365 online |
 |---|---|---|
-| Works with | classic Outlook (with a **File** menu) | **any Outlook**: the new Outlook, classic, or none |
+| Works with | classic **and new** Outlook (classic runs hidden in the background) | any Outlook, even with classic Outlook not installed |
 | How it reads the mailbox | through Outlook on this laptop | straight from Microsoft 365, after you sign in with the work account |
 | PST file | ✅ | ❌ (only classic Outlook can make PST files) |
 | Original emails | .msg | **.eml** (opens in the new and classic Outlook), calendar **.ics**, contacts **.vcf** |
@@ -107,8 +122,8 @@ it. This is done once, usually by IT, and takes about 5 minutes:
   in its own Edge window.
 * **Either** classic Outlook (the version with a **File** menu at the top left, signed in to
   the mailbox), **or** a Microsoft 365 work account for the online mode (see above).
-  * With the **new Outlook**, use the Microsoft 365 online mode. (Classic Outlook is often still
-    installed next to it: turning the "New Outlook" switch off brings it back, if you want PST files.)
+  * Using the **new Outlook** is fine: classic mode runs classic Outlook hidden in the background
+    (see above). Only a laptop with no classic Outlook at all needs the online mode.
 * Internet: classic mode needs it only for items not yet downloaded to the laptop; online mode
   needs it while archiving. The finished archive works fully offline either way.
 

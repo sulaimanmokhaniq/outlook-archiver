@@ -155,7 +155,12 @@ class Controller:
             else:
                 backend = self.engines[chosen](self.settings.load())
             backend.t = t
-            self.progress(t("p_connecting") if chosen == "classic" else t("p_signing_in"), 0, 0)
+            note = None
+            try:
+                note = backend.connect_note()
+            except Exception:  # noqa: BLE001 - only a hint
+                pass
+            self.progress(note or (t("p_connecting") if chosen == "classic" else t("p_signing_in")), 0, 0)
             try:
                 backend.connect()
             except BackendError as e:
@@ -177,6 +182,23 @@ class Controller:
             if engine:  # remembered only when picked on purpose
                 self.settings.save({"engine": engine})
         self.submit("connect", run)
+
+    def shutdown(self, wait: float = 15) -> None:
+        """Close a hidden classic Outlook this program started (runs on the Outlook thread)."""
+        done = threading.Event()
+        backends = [b for b in (self._classic,) if b is not None]
+
+        def close() -> None:
+            for b in backends:
+                try:
+                    b.close()
+                except Exception:  # noqa: BLE001
+                    pass
+            done.set()
+        if not backends:
+            return
+        self.jobs.put(close)
+        done.wait(wait)
 
     def sign_out(self) -> None:
         with self.lock:
@@ -318,6 +340,8 @@ class Controller:
                 "engine": self.engine,
                 "engines": list(self.engines),
                 "classic_failed": self.classic_failed,
+                "background": bool(self.backend and self.connected and self.engine == "classic"
+                                   and self.backend.background),
                 "needs_client_id": bool(getattr(self.engines.get("online"), "needs_client_id", False)),
                 "account": self.backend.account if self.backend and self.connected else "",
                 "capabilities": self.capabilities(),
@@ -569,4 +593,5 @@ def run_app(engines, show_window: bool = True, port: int = 0) -> None:
             time.sleep(1)
     except KeyboardInterrupt:
         pass
+    controller.shutdown()
     server.stop()

@@ -85,13 +85,18 @@ MESSAGES: dict[str, dict[str, str]] = {
         "e_busy": "Please wait - the program is still working.",
         "e_stale": "The list of items is out of date. Count the items again.",
         "e_no_outlook": (
-            "This program could not reach classic Outlook on this laptop.\n\n"
-            "It works with classic Outlook (the version with a 'File' menu at the top left).\n"
-            "* If Outlook has a 'New Outlook' switch at the top right that is ON, turn it OFF, "
+            "This program could not start classic Outlook on this laptop. It uses classic Outlook "
+            "hidden in the background to read the mailbox and to make PST files - you do NOT need to "
+            "switch away from the new Outlook.\n"
+            "* If a classic Outlook window asked you to sign in or to pick a profile, finish it once, "
             "then click 'Reconnect'.\n"
-            "* If classic Outlook is not installed, install the Microsoft 365 desktop apps "
-            "(Outlook is included), open Outlook once to sign in, then click 'Reconnect'."
+            "* If classic Outlook is not installed, install the Microsoft 365 desktop apps (Outlook is "
+            "included; the new Outlook also needs it for PST files), then click 'Reconnect'."
         ),
+        "p_classic_hidden": "You use the new Outlook: starting classic Outlook hidden in the background (no need to switch) ...",
+        "p_classic_first_time": ("First time only: classic Outlook may open a window asking you to sign in with your "
+                                 "work account. Finish it once - after that it stays hidden ..."),
+        "connected_hidden": "Connected through classic Outlook in the background - {n} mailbox(es). Keep using the new Outlook.",
         # checks on the choices
         "v_no_dir": "Choose a folder to save the archive in.",
         "v_bad_dir": "This folder does not exist: {path}",
@@ -203,12 +208,17 @@ MESSAGES: dict[str, dict[str, str]] = {
         "e_busy": "الرجاء الانتظار - البرنامج ما زال يعمل.",
         "e_stale": "قائمة العناصر لم تعد محدّثة. اضغط 'عدّ العناصر' مرة أخرى.",
         "e_no_outlook": (
-            "لم يتمكن البرنامج من الوصول إلى Outlook الكلاسيكي على هذا الجهاز.\n\n"
-            "البرنامج يعمل مع Outlook الكلاسيكي (النسخة التي فيها قائمة 'ملف' أعلى اليسار).\n"
-            "* إذا كان في أعلى Outlook زر 'Outlook الجديد' وهو مفعّل، أوقفه ثم اضغط 'إعادة الاتصال'.\n"
-            "* إذا لم يكن Outlook الكلاسيكي مثبتًا، ثبّت تطبيقات Microsoft 365 لسطح المكتب "
-            "(ومنها Outlook)، وافتح Outlook مرة لتسجيل الدخول، ثم اضغط 'إعادة الاتصال'."
+            "لم يتمكن البرنامج من تشغيل Outlook الكلاسيكي على هذا الجهاز. البرنامج يستخدم Outlook الكلاسيكي "
+            "مخفيًا في الخلفية لقراءة البريد وإنشاء ملفات PST - ولا تحتاج إلى ترك Outlook الجديد.\n"
+            "* إذا ظهرت نافذة من Outlook الكلاسيكي تطلب تسجيل الدخول أو اختيار ملف تعريف، أكملها مرة واحدة "
+            "ثم اضغط 'إعادة الاتصال'.\n"
+            "* إذا لم يكن Outlook الكلاسيكي مثبتًا، ثبّت تطبيقات Microsoft 365 لسطح المكتب (ومنها Outlook؛ "
+            "وOutlook الجديد يحتاجه أيضًا لملفات PST)، ثم اضغط 'إعادة الاتصال'."
         ),
+        "p_classic_hidden": "أنت تستخدم Outlook الجديد: جارٍ تشغيل Outlook الكلاسيكي مخفيًا في الخلفية (لا حاجة للتبديل) ...",
+        "p_classic_first_time": ("للمرة الأولى فقط: قد يفتح Outlook الكلاسيكي نافذة تطلب تسجيل الدخول بحساب العمل. "
+                                 "أكملها مرة واحدة - بعدها يبقى مخفيًا ..."),
+        "connected_hidden": "متصل عبر Outlook الكلاسيكي في الخلفية - {n} صندوق بريد. واصل استخدام Outlook الجديد.",
         "v_no_dir": "اختر مجلدًا لحفظ الأرشيف فيه.",
         "v_bad_dir": "هذا المجلد غير موجود: {path}",
         "v_no_name": "اكتب اسمًا للأرشيف.",

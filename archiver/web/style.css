@@ -360,3 +360,4 @@ button.pill:hover { border-color: var(--accent); color: var(--text); }
 .engine .advanced { margin-bottom: 8px; }
 .engine .advanced summary { cursor: pointer; color: var(--muted); font-size: 12.5px; margin-bottom: 6px; }
 .engine-buttons { display: flex; gap: 10px; }
+.banner.info { background: var(--accent-soft); border-color: var(--accent); }
