@@ -21,13 +21,13 @@ jobs:
           python-version: '3.12'
 
       - name: Install tools
-        run: python -m pip install pywin32==308 pyinstaller==6.11.1 pytest==8.3.3
+        run: python -m pip install pywin32==308 pyinstaller==6.11.1 pytest==8.3.3 msal==1.31.0 msal-extensions==1.2.0
 
       - name: Run tests
         run: python -m pytest -q tests
 
       - name: Check the Windows-only parts load
-        run: python -c "import archiver.outlook_backend, archiver.server; print('imports ok')"
+        run: python -c "import archiver.outlook_backend, archiver.graph_backend, archiver.server, msal, msal_extensions; print('imports ok')"
 
       - name: Build the .exe
         run: python -m PyInstaller --noconfirm --onefile --windowed --name OutlookArchiver --icon archiver/web/app.ico --hidden-import win32timezone --add-data "archiver/web;archiver/web" OutlookArchiver.py

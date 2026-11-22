@@ -14,6 +14,24 @@ const STR = {
     conn_ok: "Outlook connected · {n} mailbox(es)",
     conn_demo: "Demo · made-up mailbox",
     conn_bad: "Outlook not connected",
+    conn_online: "Microsoft 365 online · {who}",
+    conn_title: "Connection",
+    conn_intro: "Choose how the program reaches the mailbox. Your choice is remembered.",
+    eng_classic: "Classic Outlook on this laptop",
+    eng_classic_d: "Reads from classic Outlook (the one with a File menu). Can make PST files that open in Outlook.",
+    eng_online: "Microsoft 365 online - works with the new Outlook",
+    eng_online_d: "Reads the mailbox straight from Microsoft 365 after you sign in with your work account, whichever Outlook you use. Saves the original emails (.eml), calendar (.ics) and contacts (.vcf). It cannot make PST files.",
+    eng_in_use: "in use",
+    eng_unavailable: "not available on this computer",
+    use_classic: "Use classic Outlook",
+    use_online: "Use Microsoft 365 online",
+    sign_out: "Sign out",
+    client_id: "Application (client) ID",
+    client_id_help: "A one-time setting from your IT team, or from an app registration in Microsoft Entra (the README has the steps). It is not a password.",
+    tenant: "Organization (tenant) - leave as it is unless IT says otherwise",
+    advanced: "Advanced",
+    need_client_id: "Paste the Application (client) ID first.",
+    fmt_eml: "Original files",
     reconnect: "Reconnect",
     s1: "Folders",
     s1_hint: "Tick where to look. Sub-folders follow.",
@@ -102,6 +120,7 @@ const STR = {
     o_move: "Remove items from the mailbox after archiving",
     o_move_d: "Frees up mailbox space. Nothing is removed until the PST file has been checked, and removed items go to Deleted Items, so they can be restored. Contacts, tasks, recurring and upcoming meetings always stay.",
     o_move_needs_pst: "Turn on the PST file option first.",
+    o_move_needs_eml: "Turn on “Original files” in step 5 first - that is the safe copy in online mode.",
     sum_none: "Tick at least one folder to start.",
     sum_folders: "{n} folder(s)",
     sum_all_types: "all item types",
@@ -214,6 +233,24 @@ const STR = {
     conn_ok: "Outlook متصل · {n} صندوق بريد",
     conn_demo: "تجربة · صندوق بريد وهمي",
     conn_bad: "Outlook غير متصل",
+    conn_online: "Microsoft 365 عبر الإنترنت · {who}",
+    conn_title: "الاتصال",
+    conn_intro: "اختر طريقة وصول البرنامج إلى صندوق البريد. سيتم تذكّر اختيارك.",
+    eng_classic: "Outlook الكلاسيكي على هذا الجهاز",
+    eng_classic_d: "يقرأ من Outlook الكلاسيكي (الذي فيه قائمة «ملف»). يمكنه إنشاء ملفات PST تُفتح في Outlook.",
+    eng_online: "Microsoft 365 عبر الإنترنت - يعمل مع Outlook الجديد",
+    eng_online_d: "يقرأ صندوق البريد مباشرة من Microsoft 365 بعد تسجيل الدخول بحساب العمل، أيًّا كان Outlook الذي تستخدمه. يحفظ الرسائل الأصلية (.eml) والتقويم (.ics) وجهات الاتصال (.vcf). لا يمكنه إنشاء ملفات PST.",
+    eng_in_use: "مستخدم الآن",
+    eng_unavailable: "غير متاح على هذا الجهاز",
+    use_classic: "استخدم Outlook الكلاسيكي",
+    use_online: "استخدم Microsoft 365 عبر الإنترنت",
+    sign_out: "تسجيل الخروج",
+    client_id: "معرّف التطبيق (Client ID)",
+    client_id_help: "إعداد لمرة واحدة من فريق تقنية المعلومات، أو من تسجيل تطبيق في Microsoft Entra (الخطوات في ملف README). ليس كلمة مرور.",
+    tenant: "المؤسسة (Tenant) - اتركها كما هي ما لم يطلب فريق تقنية المعلومات غير ذلك",
+    advanced: "خيارات متقدمة",
+    need_client_id: "الصق معرّف التطبيق (Client ID) أولًا.",
+    fmt_eml: "الملفات الأصلية",
     reconnect: "إعادة الاتصال",
     s1: "المجلدات",
     s1_hint: "حدّد أين يتم البحث. المجلدات الفرعية تتبع المجلد الرئيسي.",
@@ -302,6 +339,7 @@ const STR = {
     o_move: "احذف العناصر من صندوق البريد بعد أرشفتها",
     o_move_d: "يوفّر مساحة في صندوق البريد. لا يُحذف شيء قبل فحص ملف PST، والعناصر المحذوفة تذهب إلى «العناصر المحذوفة» ويمكن استرجاعها. جهات الاتصال والمهام والاجتماعات المتكررة والقادمة تبقى دائمًا.",
     o_move_needs_pst: "فعّل خيار ملف PST أولًا.",
+    o_move_needs_eml: "فعّل «الملفات الأصلية» في الخطوة 5 أولًا - فهي النسخة الآمنة في وضع الإنترنت.",
     sum_none: "حدّد مجلدًا واحدًا على الأقل للبدء.",
     sum_folders: "{n} مجلد",
     sum_all_types: "كل أنواع العناصر",
@@ -467,7 +505,7 @@ const KINDS = ["mail", "meeting", "appointment", "contact", "task", "note", "oth
 const KIND_ICON = { mail: "✉️", meeting: "📨", appointment: "📅", contact: "👤", task: "✔️", note: "🗒️", other: "📁" };
 const PERIODS = ["all", "this_year", "last_year", "last12", "older1", "older2", "older3", "older5", "year", "custom"];
 const DATE_FIELDS = ["auto", "received", "sent", "created", "modified"];
-const FORMATS = ["msg", "mht", "pdf", "txt"];
+const FORMATS = ["eml", "msg", "mht", "pdf", "txt"];
 const LAYOUTS = ["folder_year", "type_year", "year_month", "flat"];
 
 const ui = {
@@ -527,7 +565,7 @@ function renderTree() {
       onclick: () => toggleNode(node),
       onkeydown: (e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); toggleNode(node); } },
     }, caret, box2, el("span", { class: "name", text: node.name }),
-      el("span", { class: "count", text: node.is_store ? (node.size != null ? fmtSize(node.size) : "") : fmtN(node.count) }));
+      el("span", { class: "count", text: node.is_store ? (node.size != null ? fmtSize(node.size) : "") : node.count >= 0 ? fmtN(node.count) : "" }));
     parent.append(row);
     if (node.children.length && open) {
       const kids = el("div", { class: "children", role: "group" });
@@ -579,11 +617,16 @@ function chip(label, pressed, onclick, icon, extra) {
     icon ? el("span", { class: "ico", text: icon }) : null, el("span", { text: label }),
     extra ? el("bdi", { class: "ext", text: extra }) : null);
 }
-const FORMAT_EXT = { msg: ".msg", mht: ".mht", txt: ".txt" };
+const FORMAT_EXT = { eml: ".eml .ics .vcf", msg: ".msg", mht: ".mht", txt: ".txt" };
+function caps() {
+  const c = (S.server && S.server.capabilities) || {};
+  return { pst: c.pst !== false, kinds: c.kinds || KINDS, formats: c.formats || ["msg", "mht", "pdf", "txt"] };
+}
 function renderChips() {
   const kinds = $("kinds");
   kinds.textContent = "";
-  KINDS.forEach((k) => kinds.append(chip(t("kind_" + k), ui.kinds.has(k), () => {
+  const cap = caps();
+  KINDS.filter((k) => cap.kinds.includes(k)).forEach((k) => kinds.append(chip(t("kind_" + k), ui.kinds.has(k), () => {
     ui.kinds.has(k) ? ui.kinds.delete(k) : ui.kinds.add(k);
     renderChips(); changed();
   }, KIND_ICON[k])));
@@ -596,10 +639,10 @@ function renderChips() {
 
   const fm = $("formats");
   fm.textContent = "";
-  FORMATS.forEach((f) => fm.append(chip(t("fmt_" + f), ui.formats.has(f), () => {
+  FORMATS.filter((f) => cap.formats.includes(f)).forEach((f) => fm.append(chip(t("fmt_" + f), ui.formats.has(f), () => {
     ui.formats.has(f) ? ui.formats.delete(f) : ui.formats.add(f);
     renderChips(); changed();
-  }, null, FORMAT_EXT[f] || t("fmt_pdf_note"))));
+  }, null, f === "mht" && !cap.pst ? ".html" : FORMAT_EXT[f] || t("fmt_pdf_note"))));
 
   const seg = $("attachments");
   seg.textContent = "";
@@ -686,7 +729,7 @@ function autoName() {
 }
 function criteria() {
   const [date_from, date_to] = periodRange();
-  return { kinds: KINDS.filter((k) => ui.kinds.has(k)), date_from, date_to,
+  return { kinds: KINDS.filter((k) => ui.kinds.has(k) && caps().kinds.includes(k)), date_from, date_to,
     date_field: $("date-field").value, attachments: ui.attachments, ...filterValues() };
 }
 function countRequest() {
@@ -695,8 +738,8 @@ function countRequest() {
 function exportOptions() {
   return {
     output_dir: $("o-dir").value.trim(), archive_name: $("o-name").value.trim(),
-    make_pst: $("o-pst").checked, keep_pst_open: $("o-pst-show").checked,
-    file_formats: FORMATS.filter((f) => ui.formats.has(f)), save_attachments: $("o-atts").checked,
+    make_pst: caps().pst && $("o-pst").checked, keep_pst_open: $("o-pst-show").checked,
+    file_formats: FORMATS.filter((f) => ui.formats.has(f) && caps().formats.includes(f)), save_attachments: $("o-atts").checked,
     write_index: $("o-index").checked, layout: $("layout").value, move_after: $("o-move").checked,
   };
 }
@@ -774,12 +817,16 @@ function changed(immediately) {
   else saveTimer = setTimeout(saveNow, 400);
 }
 function updateMoveTile() {
-  const pst = $("o-pst").checked;
-  if (!pst) $("o-move").checked = false;
-  $("o-move").disabled = !pst;
-  $("move-needs-pst").hidden = pst;
+  const cap = caps();
+  $("pst-tile").hidden = !cap.pst;
+  const o = exportOptions();
+  const safeCopy = o.make_pst || o.file_formats.includes("eml");
+  if (!safeCopy) $("o-move").checked = false;
+  $("o-move").disabled = !safeCopy;
+  $("move-needs-pst").hidden = safeCopy;
+  $("move-needs-pst").textContent = cap.pst ? t("o_move_needs_pst") : t("o_move_needs_eml");
   $("move-tile").classList.toggle("on", $("o-move").checked);
-  $("o-pst-show").disabled = !pst;
+  $("o-pst-show").disabled = !o.make_pst;
 }
 function updateSummary() {
   const folders = checkedFolderKeys().length;
@@ -826,7 +873,8 @@ function updatePill() {
   let cls = "wait", text = t("conn_wait");
   if (st && st.connected) {
     cls = st.demo ? "demo" : "ok";
-    text = st.demo ? t("conn_demo") : t("conn_ok", { n: st.store_count });
+    text = st.engine === "online" ? t("conn_online", { who: st.account })
+      : st.demo ? t("conn_demo") : t("conn_ok", { n: st.store_count });
   } else if (st && !(st.busy && st.job && st.job.kind === "connect") && S.ready) {
     cls = "bad"; text = t("conn_bad");
   }
@@ -850,7 +898,45 @@ function message(text, withCancel = false) {
 function showBanner(text, retry) {
   $("banner-text").textContent = text;
   $("banner-retry").hidden = !retry;
+  const st = S.server || {};
+  $("banner-online").hidden = !(retry && st.classic_failed && (st.engines || []).includes("online"));
   $("banner").hidden = false;
+}
+async function openConnection() {
+  const st = S.server || {};
+  let saved = {};
+  try { saved = await api("settings"); } catch (e) { /* keep the fields as they are */ }
+  $("client-id").value = saved.client_id || "";
+  $("tenant").value = saved.tenant && saved.tenant !== "organizations" ? saved.tenant : "";
+  const engines = st.engines || [];
+  const set = (id, eng) => {
+    const box = $("engine-" + eng);
+    const inUse = st.connected && st.engine === eng;
+    box.classList.toggle("current", inUse);
+    const badge = $(id);
+    badge.textContent = inUse ? t("eng_in_use") : engines.includes(eng) ? "" : t("eng_unavailable");
+    badge.className = "badge" + (inUse ? "" : " muted");
+  };
+  set("eng-classic-state", "classic");
+  set("eng-online-state", "online");
+  $("use-classic").disabled = !engines.includes("classic") || st.busy;
+  $("use-online").disabled = !engines.includes("online") || st.busy;
+  $("sign-out").hidden = !(st.connected && st.engine === "online");
+  $("engine-online").querySelectorAll(".field, .advanced, .hint:not(:first-of-type)").forEach((e) => (e.hidden = !st.needs_client_id));
+  if (!$("dlg-conn").open) $("dlg-conn").showModal();
+}
+async function useEngine(engine) {
+  if (engine === "online" && (S.server || {}).needs_client_id) {
+    const id = $("client-id").value.trim();
+    if (!id) { $("client-id").focus(); return message(t("need_client_id")); }
+    await api("settings", { client_id: id, tenant: $("tenant").value.trim() || "organizations" }).catch(() => {});
+  }
+  $("dlg-conn").close();
+  $("banner").hidden = true;
+  S.checked = new Set(); // folders differ between the two connections
+  S.foldersFromSettings = null;
+  try { await api("connect", { engine }); } catch (e) { return message(e.message); }
+  poll();
 }
 function validateChoices(forArchive) {
   if (!checkedFolderKeys().length) return t("need_folders");
@@ -1167,6 +1253,7 @@ async function onState(st) {
   }
   if (st.connected && !$("banner").hidden && !$("banner-retry").hidden) $("banner").hidden = true;
   if (!prev || prev.busy !== st.busy || prev.connected !== st.connected) { updatePill(); if (!S.tree.length) renderTree(); }
+  if (!prev || prev.engine !== st.engine || prev.connected !== st.connected) { renderChips(); updateMoveTile(); }
   updateSummary();
 }
 
@@ -1184,6 +1271,16 @@ function wire() {
   const reconnect = () => { $("banner").hidden = true; api("connect", {}).then(poll).catch((e) => message(e.message)); };
   $("reconnect").onclick = reconnect;
   $("banner-retry").onclick = reconnect;
+  $("banner-online").onclick = () => { $("banner").hidden = true; openConnection(); };
+  $("conn").onclick = openConnection;
+  $("conn-close").onclick = () => $("dlg-conn").close();
+  $("use-classic").onclick = () => useEngine("classic");
+  $("use-online").onclick = () => useEngine("online");
+  $("sign-out").onclick = async () => {
+    $("dlg-conn").close();
+    try { await api("signout", {}); } catch (e) { message(e.message); }
+    poll();
+  };
   $("banner-close").onclick = () => ($("banner").hidden = true);
   $("year").onchange = () => { ui.year = $("year").value; renderPeriod(); changed(); autoName(); };
   $("date-from").onchange = $("date-to").onchange = () => { renderPeriod(); changed(); autoName(); };

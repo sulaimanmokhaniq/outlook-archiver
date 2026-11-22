@@ -323,3 +323,80 @@ def test_check_counts_stopped_items(tmp_path):
 
     res = b.export(items, ExportOptions(output_dir=str(tmp_path), archive_name="S"), _noop, stop_after_10)
     assert res.cancelled and res.check["ok_items"] == 10 and res.check["missing_count"] == 40
+
+
+# ---------------------------------------------------- Microsoft 365 online mode
+
+def test_online_mode_end_to_end(tmp_path):
+    from archiver.demo_online import DemoOnlineBackend
+    b = DemoOnlineBackend()
+    assert "manager@example.com" in b.connect()
+    tree = b.list_tree()
+    names = [n.name for n in tree[0].children]
+    assert {"Inbox", "Sent Items", "Calendar", "Contacts", "Tasks"} <= set(names)
+    keys = list(b._folders)
+    items = b.scan(keys, Criteria(date_from=dt.date(2020, 1, 1), date_to=dt.date(2020, 12, 31)), _noop, lambda: False)
+    kinds = {it.kind for it in items}
+    assert {"mail", "appointment", "contact"} <= kinds and all(it.size >= 0 for it in items)
+    assert all(it.display_date.year == 2020 for it in items if it.kind in ("mail", "appointment"))
+    with pytest.raises(ValueError):  # no PST online, and removal needs a safe copy
+        ExportOptions(output_dir=str(tmp_path), archive_name="x", make_pst=False, move_after=True).validate()
+    opts = ExportOptions(output_dir=str(tmp_path), archive_name="Online", make_pst=False,
+                         file_formats={"eml", "mht"}, save_attachments=True, move_after=True)
+    res = b.export(items, opts, _noop, lambda: False)
+    assert not res.errors and res.check["ok"] and res.check["files"]["found"] == res.check["files"]["expected"]
+    exts = {os.path.splitext(f)[1] for _r, _d, fs in os.walk(res.folder) for f in fs}
+    assert {".eml", ".ics", ".vcf", ".html", ".csv", ".txt"} <= exts
+    moved = [m for m in b.http.messages.values() if m["parentFolderId"] == "mf-deleteditems"]
+    assert res.removed > 0 and len(moved) >= res.removed
+    assert res.kept == sum(1 for it in items if it.kind not in ("mail", "meeting", "other")) + \
+        sum(1 for it in items if it.folder_parts[:1] == ("Deleted Items",))
+
+
+def test_online_graph_paging_and_dates(tmp_path):
+    from archiver.demo_online import DemoOnlineBackend
+    b = DemoOnlineBackend()
+    b.connect()
+    b.list_tree()
+    inbox = [k for k, v in b._folders.items() if v[2] == ("Inbox",)][0]
+    items = list(b.iter_folder(inbox, Criteria(), _noop, lambda: False))
+    assert len(items) == 700  # 14 pages of 50 were followed
+    demo = DemoBackend()
+    original = {i.subject: i.received for i, _b, _a in demo._items["f0"]}
+    assert all(original[it.subject] == it.received for it in items if it.received)
+
+
+def test_server_switches_connection(tmp_path):
+    from archiver.demo_online import DemoOnlineBackend
+    ctl = Controller({"classic": lambda s: DemoBackend(), "online": lambda s: DemoOnlineBackend()},
+                     Settings(str(tmp_path / "s.json")), History(str(tmp_path / "h.sqlite3")))
+
+    def wait():
+        for _ in range(200):
+            if not ctl.busy:
+                return ctl.state()
+            time.sleep(0.02)
+
+    ctl.connect()
+    st = wait()
+    assert st["engine"] == "classic" and st["capabilities"]["pst"]
+    ctl.connect("online")
+    st = wait()
+    assert st["engine"] == "online" and not st["capabilities"]["pst"] and "eml" in st["capabilities"]["formats"]
+    assert st["account"] == "manager@example.com"
+    assert ctl.settings.load()["engine"] == "online"
+    ctl.sign_out()
+    assert not ctl.state()["connected"] and ctl.settings.load()["engine"] == "auto"
+
+
+def test_classic_missing_offers_online(tmp_path):
+    from archiver.demo_online import DemoOnlineBackend
+    ctl = Controller({"classic": lambda s: NoOutlook(), "online": lambda s: DemoOnlineBackend()},
+                     Settings(str(tmp_path / "s.json")), History(str(tmp_path / "h.sqlite3")))
+    ctl.connect()
+    for _ in range(100):
+        if not ctl.busy:
+            break
+        time.sleep(0.02)
+    st = ctl.state()
+    assert st["classic_failed"] and "Microsoft 365 online" in st["error"] and not st["connected"]

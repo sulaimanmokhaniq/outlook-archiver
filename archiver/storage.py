@@ -52,6 +52,9 @@ DEFAULT_SETTINGS: dict = {
     "output_dir": "",
     "skip_archived": True,
     "folders": None,  # list of folder labels, None = first mailbox
+    "engine": "auto",  # auto | classic | online
+    "client_id": "",  # Microsoft 365 online mode: the app registration's Application (client) ID
+    "tenant": "organizations",
 }
 
 

@@ -49,9 +49,15 @@ class Busy(Exception):
 class Controller:
     """Holds the program's state and runs one job at a time."""
 
-    def __init__(self, make_backend: Callable[[], Backend], settings: Settings | None = None,
+    def __init__(self, engines, settings: Settings | None = None,
                  history: History | None = None) -> None:
-        self.make_backend = make_backend
+        """engines: {"classic": factory, "online": factory}; a factory gets the settings dict."""
+        if callable(engines):  # a single data source (used by the tests)
+            engines = {"classic": lambda _settings, make=engines: make()}
+        self.engines: dict[str, Callable[[dict], Backend]] = engines
+        self.engine = ""  # the connection in use: classic | online
+        self.classic_failed = False
+        self._classic: Backend | None = None
         self.settings = settings or Settings()
         self.history = history or History()
         self.backend: Backend | None = None
@@ -123,25 +129,75 @@ class Controller:
         return self.backend
 
     # ---------------------------------------------------------------- jobs
-    def connect(self) -> None:
+    def connect(self, engine: str | None = None) -> None:
+        """Connect to classic Outlook or to Microsoft 365 online.
+
+        Without a choice, the saved one is used; "auto" means classic Outlook,
+        and if it is missing the screen offers the online mode instead (it
+        never opens a sign-in page by itself).
+        """
+        settings = self.settings.load()
+        chosen = engine or settings.get("engine") or "auto"
+        if chosen not in self.engines:
+            chosen = "classic" if "classic" in self.engines else next(iter(self.engines))
+
         def run() -> None:
             t = self.t()
             with self.lock:
                 self.connected = False
-            if self.backend is None:
-                self.backend = self.make_backend()
-            self.backend.t = t
-            self.progress(t("p_connecting"), 0, 0)
-            self.backend.connect()
-            self.progress(t("p_reading_tree"), 0, 0)
-            tree = [n.to_dict() for n in self.backend.list_tree()]
-            with self.lock:
-                self.connected = True
-                self.demo = self.backend.is_demo
-                self.tree = tree
+                self.tree = []
                 self.tree_version += 1
                 self.scan = None
+            if chosen == "classic":
+                if self._classic is None:
+                    self._classic = self.engines["classic"](settings)
+                backend = self._classic
+            else:
+                backend = self.engines[chosen](self.settings.load())
+            backend.t = t
+            self.progress(t("p_connecting") if chosen == "classic" else t("p_signing_in"), 0, 0)
+            try:
+                backend.connect()
+            except BackendError as e:
+                if chosen == "classic" and "online" in self.engines:
+                    with self.lock:
+                        self.classic_failed = True
+                    raise BackendError(str(e) + "\n\n" + t("e_try_online")) from e
+                raise
+            self.progress(t("p_reading_tree"), 0, 0)
+            tree = [n.to_dict() for n in backend.list_tree()]
+            with self.lock:
+                self.backend = backend
+                self.engine = chosen
+                self.connected = True
+                self.classic_failed = chosen != "classic" and self.classic_failed
+                self.demo = backend.is_demo
+                self.tree = tree
+                self.tree_version += 1
+            if engine:  # remembered only when picked on purpose
+                self.settings.save({"engine": engine})
         self.submit("connect", run)
+
+    def sign_out(self) -> None:
+        with self.lock:
+            if self.busy:
+                raise Busy()
+            backend = self.backend
+            if self.engine == "online" and backend is not None:
+                backend.sign_out()
+                self.connected = False
+                self.backend = None
+                self.engine = ""
+                self.tree = []
+                self.tree_version += 1
+                self.scan = None
+        self.settings.save({"engine": "auto"})
+
+    def capabilities(self) -> dict:
+        b = self.backend
+        if not b or not self.connected:
+            return {}
+        return {"pst": b.supports_pst, "kinds": list(b.kinds), "formats": list(b.formats)}
 
     def count(self, body: dict) -> None:
         folders = [k for k in body.get("folders", []) if isinstance(k, str)]
@@ -173,6 +229,11 @@ class Controller:
         raw = dict(body.get("options") or {})
         raw["lang"] = t.lang
         opts = ExportOptions.from_dict(raw)
+        backend = self.backend
+        if backend is not None:
+            if opts.make_pst and not backend.supports_pst:
+                raise ValueError(t("e_no_pst_online"))
+            opts.file_formats = {f for f in opts.file_formats if f in backend.formats}
         if opts.output_dir:
             try:
                 os.makedirs(opts.output_dir, exist_ok=True)
@@ -254,6 +315,12 @@ class Controller:
                 "job": job,
                 "connected": self.connected,
                 "demo": self.demo,
+                "engine": self.engine,
+                "engines": list(self.engines),
+                "classic_failed": self.classic_failed,
+                "needs_client_id": bool(getattr(self.engines.get("online"), "needs_client_id", False)),
+                "account": self.backend.account if self.backend and self.connected else "",
+                "capabilities": self.capabilities(),
                 "store_count": len(self.tree),
                 "tree_version": self.tree_version,
                 "scan": scan,
@@ -416,7 +483,10 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             body = self._body()
             if path == "/api/connect":
-                c.connect()
+                engine = body.get("engine")
+                c.connect(engine if engine in c.engines else None)
+            elif path == "/api/signout":
+                c.sign_out()
             elif path == "/api/count":
                 c.count(body)
             elif path == "/api/archive":
@@ -483,8 +553,8 @@ def open_window(url: str) -> subprocess.Popen | None:
     return None
 
 
-def run_app(make_backend: Callable[[], Backend], show_window: bool = True, port: int = 0) -> None:
-    controller = Controller(make_backend)
+def run_app(engines, show_window: bool = True, port: int = 0) -> None:
+    controller = Controller(engines)
     server = Server(controller, port)
     server.start()
     controller.connect()

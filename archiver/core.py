@@ -323,7 +323,7 @@ def unique_dir(parent: str, name: str) -> str:
 
 # ------------------------------------------------------- export settings
 
-FILE_FORMATS = ("msg", "mht", "pdf", "txt")
+FILE_FORMATS = ("eml", "msg", "mht", "pdf", "txt")
 
 
 @dataclass
@@ -365,7 +365,7 @@ class ExportOptions:
             raise ValueError(t("v_no_name"))
         if not (self.make_pst or self.file_formats or self.save_attachments or self.write_index):
             raise ValueError(t("v_no_output"))
-        if self.move_after and not self.make_pst:
+        if self.move_after and not (self.make_pst or "eml" in self.file_formats):
             raise ValueError(t("v_move_needs_pst"))
 
 

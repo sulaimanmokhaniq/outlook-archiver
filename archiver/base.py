@@ -35,7 +35,7 @@ Progress = Callable[[str, int, int], None]  # message, done, total
 IsCancelled = Callable[[], bool]
 OnArchived = Callable[[list[ItemInfo], str], None]
 
-FORMAT_ORDER = ("msg", "mht", "pdf", "txt")
+FORMAT_ORDER = ("eml", "msg", "mht", "pdf", "txt")
 
 
 class BackendError(Exception):
@@ -73,6 +73,17 @@ class FolderNode:
 class Backend:
     label = "Data source"
     is_demo = False
+    supports_pst = True  # classic Outlook can write PST files; Microsoft 365 online cannot
+    kinds = ("mail", "meeting", "appointment", "contact", "task", "note", "other")
+    formats = ("msg", "mht", "pdf", "txt")
+    account = ""
+
+    def can_remove(self, item: ItemInfo) -> bool:
+        """Whether this data source may remove this kind of item (after archiving)."""
+        return True
+
+    def sign_out(self) -> None:
+        """Forget a saved sign-in (online mode only)."""
 
     def __init__(self) -> None:
         self.t = Translator()
@@ -242,18 +253,26 @@ class Backend:
                     kind = items[n].kind
                     res.copied[kind] = res.copied.get(kind, 0) + 1
 
-            # ---- 3. only if asked, and only what the check found in the PST
-            if opts.move_after and pst_open and in_pst and not res.cancelled:
+            # ---- 3. only if asked, and only what the check confirmed is safely archived:
+            #         in the PST (classic Outlook) or as an original .eml file (online)
+            if pst_open:
+                candidates = in_pst
+            elif "eml" in formats:
+                candidates = [(n, items[n]) for n in range(processed)]
+            else:
+                candidates = []
+            if opts.move_after and candidates and not res.cancelled:
                 pst_check = res.check.get("pst") or {}
-                if not pst_check.get("checked") or pst_check.get("found", 0) < len(in_pst):
+                if pst_open and (not pst_check.get("checked") or pst_check.get("found", 0) < len(in_pst)):
                     missing = len(in_pst) - pst_check.get("found", 0)
                     res.errors.insert(0, t("e_verify", detail=t("v_missing_n", n=max(missing, 0))))
                 else:
                     progress(t("p_checking"), len(items), len(items))
-                    safe = [(n, it) for n, it in in_pst if status.get(n) == "chk_ok"]
+                    safe = [(n, it) for n, it in candidates if status.get(n) == "chk_ok"]
                     removable = [(n, it) for n, it in safe
-                                 if it.removal_blocker() is None and not self.in_protected_folder(it)]
-                    res.kept = len(in_pst) - len(removable)
+                                 if it.removal_blocker() is None and not self.in_protected_folder(it)
+                                 and self.can_remove(it)]
+                    res.kept = len(candidates) - len(removable)
                     for i, (n, item) in enumerate(removable):
                         if cancelled():
                             res.cancelled = True

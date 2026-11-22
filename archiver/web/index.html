@@ -21,7 +21,7 @@
     </div>
   </div>
   <div class="top-actions">
-    <span id="conn" class="pill"><span class="dot"></span><span id="conn-text"></span></span>
+    <button id="conn" class="pill" type="button"><span class="dot"></span><span id="conn-text"></span><span class="pill-more" aria-hidden="true">▾</span></button>
     <button id="lang-btn" class="ghost" type="button"></button>
   </div>
 </header>
@@ -29,6 +29,7 @@
 <div id="banner" class="banner" hidden>
   <div class="banner-text" id="banner-text"></div>
   <div class="banner-actions">
+    <button id="banner-online" class="primary small" type="button" data-t="use_online" hidden></button>
     <button id="banner-retry" class="secondary small" type="button" data-t="reconnect" hidden></button>
     <button id="banner-close" class="ghost small" type="button" aria-label="Close">✕</button>
   </div>
@@ -97,7 +98,7 @@
 
     <div class="card">
       <div class="card-head"><span class="step">5</span><h2 data-t="s5"></h2></div>
-      <div class="tile">
+      <div class="tile" id="pst-tile">
         <input type="checkbox" id="o-pst">
         <div class="tile-body">
           <label for="o-pst"><strong data-t="o_pst"></strong><small data-t="o_pst_d"></small></label>
@@ -165,6 +166,32 @@
   <div class="lang-choices">
     <button type="button" class="big" data-lang="en">English</button>
     <button type="button" class="big" data-lang="ar">العربية</button>
+  </div>
+</dialog>
+
+<dialog id="dlg-conn" class="dialog">
+  <div class="preview-head"><h3 data-t="conn_title"></h3>
+    <button id="conn-close" class="ghost" type="button" aria-label="Close">✕</button></div>
+  <p class="hint" data-t="conn_intro"></p>
+  <div class="engine" id="engine-classic">
+    <div class="engine-head"><strong data-t="eng_classic"></strong><span class="badge" id="eng-classic-state"></span></div>
+    <p class="hint" data-t="eng_classic_d"></p>
+    <button id="use-classic" class="secondary" type="button" data-t="use_classic"></button>
+  </div>
+  <div class="engine" id="engine-online">
+    <div class="engine-head"><strong data-t="eng_online"></strong><span class="badge" id="eng-online-state"></span></div>
+    <p class="hint" data-t="eng_online_d"></p>
+    <label class="field"><span data-t="client_id"></span>
+      <input id="client-id" type="text" dir="ltr" autocomplete="off" spellcheck="false" placeholder="00000000-0000-0000-0000-000000000000"></label>
+    <details class="advanced"><summary data-t="advanced"></summary>
+      <label class="field"><span data-t="tenant"></span>
+        <input id="tenant" type="text" dir="ltr" autocomplete="off" spellcheck="false" placeholder="organizations"></label>
+    </details>
+    <p class="hint" data-t="client_id_help"></p>
+    <div class="engine-buttons">
+      <button id="use-online" class="primary" type="button" data-t="use_online"></button>
+      <button id="sign-out" class="secondary" type="button" data-t="sign_out" hidden></button>
+    </div>
   </div>
 </dialog>
 

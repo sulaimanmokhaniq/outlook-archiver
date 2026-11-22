@@ -65,17 +65,52 @@ This option exists to free up mailbox space. It is built to be safe:
 * If you click **Stop** during copying, nothing is removed.
 * The Excel list marks every item that was removed.
 
+## Two ways to connect: classic Outlook or Microsoft 365 online
+
+Click the connection button at the top of the screen to choose. The program remembers the choice.
+
+| | Classic Outlook | Microsoft 365 online |
+|---|---|---|
+| Works with | classic Outlook (with a **File** menu) | **any Outlook**: the new Outlook, classic, or none |
+| How it reads the mailbox | through Outlook on this laptop | straight from Microsoft 365, after you sign in with the work account |
+| PST file | ✅ | ❌ (only classic Outlook can make PST files) |
+| Original emails | .msg | **.eml** (opens in the new and classic Outlook), calendar **.ics**, contacts **.vcf** |
+| Web page / PDF / text / attachments / Excel list | ✅ | ✅ |
+| Sizes, check, skip already archived | ✅ | ✅ |
+| Remove from mailbox | after the PST is checked | after the original **.eml** files are checked (emails only; calendar, contacts and tasks stay) |
+| Internet | only for items not yet downloaded | needed while archiving |
+
+If classic Outlook is not found, the program says so and offers **Use Microsoft 365 online**.
+
+### One-time setup for Microsoft 365 online
+
+Microsoft only lets a program sign in to a work mailbox if the organization has registered
+it. This is done once, usually by IT, and takes about 5 minutes:
+
+1. Sign in to https://entra.microsoft.com, then go to **Applications → App registrations → New registration**.
+2. Name: `Outlook Archiver`. Supported account types: **this organization only**. Click **Register**.
+3. Copy the **Application (client) ID** from the overview page.
+4. Go to **Authentication → Add a platform → Mobile and desktop applications**, tick
+   `http://localhost`, then click **Configure**.
+5. Go to **API permissions → Add a permission → Microsoft Graph → Delegated** and add `User.Read`,
+   `Mail.ReadWrite`, `Calendars.Read`, `Contacts.Read` and `Tasks.Read`. If your organization
+   requires it, click **Grant admin consent**.
+6. In the program, open the connection button, paste the Application (client) ID, and click
+   **Use Microsoft 365 online**. A Microsoft sign-in page opens in the browser. Sign in once;
+   the program then stays signed in, and the session is stored encrypted for this Windows user.
+
+`Mail.ReadWrite` is only needed for "Remove from mailbox". The program never sends email.
+
 ## What it needs
 
 * Windows 10 or 11, with **Microsoft Edge**, which is built into Windows. The screen opens
   in its own Edge window.
-* **Classic Outlook**, the version with a **File** menu at the top left, signed in to the
-  mailbox. It comes with the Microsoft 365 desktop apps.
-  * If Outlook has a **"New Outlook"** switch at the top right and it is ON, turn it OFF.
-    The new Outlook can't be controlled by other programs. If classic Outlook isn't found,
-    the program explains this on screen and offers a **Reconnect** button.
-* Internet is needed only while archiving items that are not yet downloaded to the laptop.
-  The finished archive works fully offline.
+* **Either** classic Outlook (the version with a **File** menu at the top left, signed in to
+  the mailbox), **or** a Microsoft 365 work account for the online mode (see above).
+  * With the **new Outlook**, use the Microsoft 365 online mode. (Classic Outlook is often still
+    installed next to it: turning the "New Outlook" switch off brings it back, if you want PST files.)
+* Internet: classic mode needs it only for items not yet downloaded to the laptop; online mode
+  needs it while archiving. The finished archive works fully offline either way.
 
 ## Getting the program
 

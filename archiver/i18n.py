@@ -97,7 +97,21 @@ MESSAGES: dict[str, dict[str, str]] = {
         "v_bad_dir": "This folder does not exist: {path}",
         "v_no_name": "Give the archive a name.",
         "v_no_output": "Choose at least one way to save (PST, files or the Excel list).",
-        "v_move_needs_pst": "Removing items from the mailbox needs the PST option to be on.",
+        "v_move_needs_pst": ("Removing items from the mailbox needs a safe copy first: the PST file, "
+                             "or (in Microsoft 365 online mode) the original files."),
+        "connected_online": "Signed in to Microsoft 365 as {who}.",
+        "p_signing_in": "Signing in to Microsoft 365 - finish the sign-in in the browser window that opened ...",
+        "e_try_online": ("You can also use the Microsoft 365 online mode instead: it works with the new Outlook "
+                         "too. Click 'Use Microsoft 365 online'."),
+        "e_no_client_id": ("Microsoft 365 online mode needs an Application (client) ID before you can sign in. "
+                           "Open the connection settings and paste the ID your IT team (or the README steps) gave you."),
+        "e_signin": "Signing in to Microsoft 365 did not work: {err}",
+        "e_network": "Could not reach Microsoft 365. Check the internet connection. ({err})",
+        "e_denied": ("Microsoft 365 refused access: {err}\n\nYour IT team may need to approve this program "
+                     "for your account (the README explains what to ask)."),
+        "e_graph": "Microsoft 365 answered with an error ({code}): {err}",
+        "e_no_pst_online": "PST files can only be made with classic Outlook. In Microsoft 365 online mode, save the original files instead.",
+        "e_format_online": "{fmt} files cannot be made in Microsoft 365 online mode.",
         # README
         "r_title": "Outlook archive: {name}",
         "r_made": "Made on {when}",
@@ -199,7 +213,21 @@ MESSAGES: dict[str, dict[str, str]] = {
         "v_bad_dir": "هذا المجلد غير موجود: {path}",
         "v_no_name": "اكتب اسمًا للأرشيف.",
         "v_no_output": "اختر طريقة حفظ واحدة على الأقل (PST أو ملفات أو قائمة Excel).",
-        "v_move_needs_pst": "الحذف من صندوق البريد يتطلب تفعيل خيار ملف PST.",
+        "v_move_needs_pst": ("الحذف من صندوق البريد يتطلب نسخة آمنة أولًا: ملف PST، "
+                             "أو (في وضع Microsoft 365 عبر الإنترنت) الملفات الأصلية."),
+        "connected_online": "تم تسجيل الدخول إلى Microsoft 365 باسم {who}.",
+        "p_signing_in": "جارٍ تسجيل الدخول إلى Microsoft 365 - أكمل تسجيل الدخول في نافذة المتصفح التي فُتحت ...",
+        "e_try_online": ("يمكنك أيضًا استخدام وضع Microsoft 365 عبر الإنترنت بدلًا منه: يعمل مع Outlook الجديد "
+                         "أيضًا. اضغط 'استخدم Microsoft 365 عبر الإنترنت'."),
+        "e_no_client_id": ("وضع Microsoft 365 عبر الإنترنت يحتاج إلى معرّف التطبيق (Client ID) قبل تسجيل الدخول. "
+                           "افتح إعدادات الاتصال والصق المعرّف الذي أعطاك إياه فريق تقنية المعلومات (أو خطوات ملف README)."),
+        "e_signin": "لم ينجح تسجيل الدخول إلى Microsoft 365: {err}",
+        "e_network": "تعذّر الوصول إلى Microsoft 365. تحقّق من الاتصال بالإنترنت. ({err})",
+        "e_denied": ("رفض Microsoft 365 الوصول: {err}\n\nقد يحتاج فريق تقنية المعلومات إلى الموافقة على هذا البرنامج "
+                     "لحسابك (ملف README يشرح ما يجب طلبه)."),
+        "e_graph": "ردّ Microsoft 365 بخطأ ({code}): {err}",
+        "e_no_pst_online": "ملفات PST تُنشأ فقط عبر Outlook الكلاسيكي. في وضع Microsoft 365 عبر الإنترنت، احفظ الملفات الأصلية بدلًا منها.",
+        "e_format_online": "لا يمكن إنشاء ملفات {fmt} في وضع Microsoft 365 عبر الإنترنت.",
         "r_title": "أرشيف Outlook: {name}",
         "r_made": "تاريخ الإنشاء: {when}",
         "r_count": "العناصر المؤرشفة: {done:,} من {total:,}",
